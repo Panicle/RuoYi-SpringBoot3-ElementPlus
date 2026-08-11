@@ -168,6 +168,7 @@ async function loadProfile() {
 
 /** 关闭弹窗 */
 function cancel() {
+  proxy.$emit("update:modelValue", false)
   reset()
 }
 
