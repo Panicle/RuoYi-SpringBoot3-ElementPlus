@@ -92,6 +92,9 @@
                   <el-tooltip content="分配角色" placement="top" v-if="scope.row.userId !== 1">
                     <el-button link type="primary" icon="CircleCheck" @click="handleAuthRole(scope.row)" v-hasPermi="['system:user:edit']"></el-button>
                   </el-tooltip>
+                  <el-tooltip content="科研档案" placement="top" v-if="scope.row.userId !== 1">
+                    <el-button link type="primary" icon="Document" @click="openProfileDialog(scope.row)" v-hasPermi="['biz:userProfile:query']"></el-button>
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>
@@ -188,6 +191,13 @@
       </template>
     </el-dialog>
 
+    <!-- 科研档案弹窗 -->
+    <ProfileDialog
+      v-model="profileDialogVisible"
+      :user-id="profileTarget.userId"
+      :user-name="profileTarget.userName"
+    />
+
     <!-- 用户导入对话框 -->
     <el-dialog :title="upload.title" v-model="upload.open" width="400px" append-to-body>
       <el-upload ref="uploadRef" :limit="1" accept=".xlsx, .xls" :headers="upload.headers" :action="upload.url + '?updateSupport=' + upload.updateSupport" :disabled="upload.isUploading" :on-progress="handleFileUploadProgress" :on-success="handleFileSuccess" :on-change="handleFileChange" :on-remove="handleFileRemove" :auto-upload="false" drag>
@@ -219,11 +229,16 @@ import useAppStore from '@/store/modules/app'
 import { changeUserStatus, listUser, resetUserPwd, delUser, getUser, updateUser, addUser, deptTreeSelect } from "@/api/system/user"
 import { Splitpanes, Pane } from "splitpanes"
 import "splitpanes/dist/splitpanes.css"
+import ProfileDialog from "./profileDialog.vue"
 
 const router = useRouter()
 const appStore = useAppStore()
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable, sys_user_sex } = proxy.useDict("sys_normal_disable", "sys_user_sex")
+
+// 科研档案弹窗
+const profileDialogVisible = ref(false)
+const profileTarget = ref({ userId: undefined, userName: "" })
 
 const userList = ref([])
 const open = ref(false)
@@ -399,6 +414,12 @@ function handleCommand(command, row) {
 function handleAuthRole(row) {
   const userId = row.userId
   router.push("/system/user-auth/role/" + userId)
+}
+
+/** 打开科研档案弹窗 */
+function openProfileDialog(row) {
+  profileTarget.value = { userId: row.userId, userName: row.userName || row.nickName || "" }
+  profileDialogVisible.value = true
 }
 
 /** 重置密码按钮操作 */
