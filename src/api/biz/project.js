@@ -115,12 +115,12 @@ export function listProjectUnit(query) {
   })
 }
 
-// 新增课题关联单位（body: projectId/unitId/cooperationType）
-export function addProjectUnit(data) {
+// 批量新增课题关联单位（body: projectId/unitIds/cooperationType）
+export function addProjectUnitBatch(data) {
   return request({
-    url: '/biz/project/unit',
+    url: '/biz/project/unit/batch',
     method: 'post',
-    data: data
+    data
   })
 }
 

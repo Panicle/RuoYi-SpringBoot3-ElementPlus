@@ -333,14 +333,15 @@
     <!-- 添加合作单位对话框 -->
     <el-dialog title="添加合作单位" v-model="addUnitOpen" width="520px" append-to-body :close-on-click-modal="false">
       <el-form ref="addUnitRef" :model="addUnitForm" :rules="addUnitRules" label-width="100px">
-        <el-form-item label="合作单位" prop="unitId">
+        <el-form-item label="合作单位" prop="unitIds">
           <el-tree-select
-            v-model="addUnitForm.unitId"
+            v-model="addUnitForm.unitIds"
             :data="unitTreeOptions"
             :props="{ value: 'id', label: 'label', children: 'children' }"
             value-key="id"
             placeholder="请选择合作单位"
             check-strictly
+            multiple
             style="width: 100%"
           />
         </el-form-item>
@@ -361,7 +362,7 @@
 </template>
 
 <script setup name="ProjectDetail">
-import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject, listProjectUnit, addProjectUnit, delProjectUnit } from "@/api/biz/project"
+import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject, listProjectUnit, addProjectUnitBatch, delProjectUnit } from "@/api/biz/project"
 import { treeUnit } from "@/api/biz/unit"
 import { listUser } from "@/api/system/user"
 import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
@@ -470,7 +471,7 @@ const addUnitOpen = ref(false)
 const unitTreeOptions = ref([])
 const addUnitForm = ref({})
 const addUnitRules = {
-  unitId: [{ required: true, message: "请选择合作单位", trigger: "change" }],
+  unitIds: [{ required: true, type: 'array', message: "请选择合作单位", trigger: "change" }],
   cooperationType: [{ required: true, message: "请选择合作方式", trigger: "change" }]
 }
 
@@ -651,7 +652,7 @@ function loadUnits() {
 }
 
 function openAddUnit() {
-  addUnitForm.value = { projectId: projectId.value, unitId: undefined, cooperationType: undefined }
+  addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: undefined }
   treeUnit().then(response => {
     unitTreeOptions.value = response.data || []
   })
@@ -661,8 +662,12 @@ function openAddUnit() {
 function submitAddUnit() {
   proxy.$refs["addUnitRef"].validate(valid => {
     if (!valid) return
-    addProjectUnit(addUnitForm.value).then(() => {
-      proxy.$modal.msgSuccess("添加成功")
+    addProjectUnitBatch({
+      projectId: projectId.value,
+      unitIds: addUnitForm.value.unitIds,
+      cooperationType: addUnitForm.value.cooperationType
+    }).then(res => {
+      proxy.$modal.msgSuccess(res.msg || "添加成功")
       addUnitOpen.value = false
       loadUnits()
     })
