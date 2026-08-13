@@ -97,7 +97,7 @@ export function delProjectMember(memberIds) {
   })
 }
 
-// 换主持人
+// 换组长
 export function changeHost(projectId, newLeaderUserId) {
   return request({
     url: '/biz/project/member/changeHost',
