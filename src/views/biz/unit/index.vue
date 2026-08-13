@@ -77,7 +77,7 @@
           <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['biz:unit:edit']">修改</el-button>
           <el-button link type="primary" icon="Plus" @click="handleAdd(scope.row)" v-hasPermi="['biz:unit:add']">新增</el-button>
           <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['biz:unit:remove']">删除</el-button>
-          <el-button link type="primary" icon="User" @click="handleContact(scope.row)" v-hasPermi="['biz:unit:contact']">联系人</el-button>
+          <el-button link type="primary" icon="User" @click="handleContact(scope.row)" v-hasPermi="['biz:unit:query']">联系人</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -136,7 +136,7 @@
               </el-form-item>
             </el-col>
           </template>
-          <template v-if="isTopLevel && isCompany">
+          <template v-if="isCompany">
             <el-col :span="12">
               <el-form-item label="公司类型" prop="companyType">
                 <el-select v-model="form.companyType" placeholder="请选择公司类型" clearable style="width: 100%">
@@ -157,7 +157,7 @@
               </el-form-item>
             </el-col>
           </template>
-          <el-col :span="24" v-if="isTopLevel && (isCompany || isSchool)">
+          <el-col :span="24" v-if="isCompany || isSchool">
             <el-form-item label="擅长领域" prop="expertise">
               <el-input v-model="form.expertise" type="textarea" :rows="2" placeholder="请输入擅长领域" maxlength="500" />
             </el-form-item>
