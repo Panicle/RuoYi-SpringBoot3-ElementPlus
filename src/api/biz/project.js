@@ -43,6 +43,16 @@ export function delProject(projectIds) {
   })
 }
 
+// 导出课题
+export function exportProject(query) {
+  return request({
+    url: '/biz/project/export',
+    method: 'post',
+    data: query,
+    responseType: 'blob'
+  })
+}
+
 // 状态机迁移（相邻单向）
 export function changeStatus(projectId, targetStatus) {
   return request({
