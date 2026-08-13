@@ -54,6 +54,17 @@
             <el-descriptions-item label="预算余额">{{ formatBudget(form.budgetBalance) }}</el-descriptions-item>
             <el-descriptions-item label="备注" :span="2">{{ form.remark || "-" }}</el-descriptions-item>
           </el-descriptions>
+          <el-divider content-position="left">预算细分</el-divider>
+          <div v-for="group in budgetSplitGroups" :key="group.title" class="budget-group">
+            <div class="budget-group-title">{{ group.title }}</div>
+            <el-table :data="group.items" size="small" border>
+              <el-table-column label="科目" prop="label" />
+              <el-table-column label="金额" align="right">
+                <template #default="scope">{{ formatBudget(scope.row.budgetAmount) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <div class="budget-total">预算总额：<span class="budget-total-value">{{ formatBudget(budgetSplitTotal) }}</span></div>
         </el-tab-pane>
 
         <el-tab-pane label="成员管理" name="member">
@@ -203,7 +214,7 @@
     </el-dialog>
 
     <!-- 修改课题对话框 -->
-    <el-dialog title="修改课题" v-model="editOpen" width="560px" append-to-body :close-on-click-modal="false">
+    <el-dialog title="修改课题" v-model="editOpen" width="720px" append-to-body :close-on-click-modal="false">
       <el-form ref="editRef" :model="editForm" :rules="editRules" label-width="100px" v-loading="editLoading">
         <el-form-item label="课题编号">
           <el-input v-model="editForm.projectNo" disabled />
@@ -216,8 +227,27 @@
             <el-option v-for="dict in project_type" :key="dict.value" :label="dict.label" :value="dict.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="预算总额" prop="budgetTotal">
-          <el-input-number v-model="editForm.budgetTotal" :min="0" :precision="2" :step="1000" controls-position="right" style="width: 100%" />
+        <el-form-item label="预算总额">
+          <span class="budget-total-value">{{ formatBudget(editBudgetSplitTotal) }}</span>
+        </el-form-item>
+        <el-form-item label="预算细分">
+          <div class="budget-split-box">
+            <div v-for="group in BUDGET_GROUPS" :key="group.title" class="budget-group">
+              <div class="budget-group-title">{{ group.title }}</div>
+              <div class="budget-item-grid">
+                <div v-for="category in group.categories" :key="category" class="budget-item">
+                  <span class="budget-label">{{ budgetCategoryMap[category] || category }}</span>
+                  <el-input-number
+                    v-model="editBudgetAmountMap[category]"
+                    :min="0"
+                    :precision="2"
+                    controls-position="right"
+                    style="width: 100%"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="开始日期" prop="startDate">
           <el-date-picker v-model="editForm.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择开始日期" style="width: 100%" />
@@ -242,11 +272,60 @@
 <script setup name="ProjectDetail">
 import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject } from "@/api/biz/project"
 import { listUser } from "@/api/system/user"
+import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
 
 const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
-const { project_type, project_status, member_role } = proxy.useDict("project_type", "project_status", "member_role")
+const { project_type, project_status, member_role, budget_category } = proxy.useDict("project_type", "project_status", "member_role", "budget_category")
+
+// 预算细分：科目名走字典渲染
+const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
+
+// 预算细分展示（基本信息 tab）
+const budgetSplitGroups = computed(() => {
+  const map = {}
+  ;(form.value.budgetSplitList || []).forEach(s => {
+    if (s && s.category) map[s.category] = Number(s.budgetAmount || 0)
+  })
+  return BUDGET_GROUPS.map(g => ({
+    title: g.title,
+    items: g.categories.map(c => ({
+      label: budgetCategoryMap.value[c] || c,
+      budgetAmount: map[c] || 0
+    }))
+  }))
+})
+const budgetSplitTotal = computed(() => {
+  let total = 0
+  budgetSplitGroups.value.forEach(g => g.items.forEach(it => { total += it.budgetAmount }))
+  return total
+})
+
+// 预算细分编辑（修改弹窗，金额按科目映射）
+const editBudgetAmountMap = reactive({})
+const editBudgetSplitTotal = computed(() => {
+  let total = 0
+  BUDGET_CATEGORIES.forEach(c => {
+    const v = editBudgetAmountMap[c]
+    if (typeof v === "number" && !Number.isNaN(v)) total += v
+  })
+  return total
+})
+function initEditBudgetAmountMap(splits) {
+  BUDGET_CATEGORIES.forEach(c => { editBudgetAmountMap[c] = undefined })
+  ;(splits || []).forEach(s => {
+    if (s && s.category && BUDGET_CATEGORIES.includes(s.category)) {
+      editBudgetAmountMap[s.category] = s.budgetAmount == null ? undefined : Number(s.budgetAmount)
+    }
+  })
+}
+function buildEditBudgetSplitList() {
+  return BUDGET_CATEGORIES.map(category => ({
+    category,
+    budgetAmount: editBudgetAmountMap[category] == null ? 0 : editBudgetAmountMap[category]
+  }))
+}
 
 const projectId = computed(() => Number(route.params.projectId))
 const activeTab = ref("info")
@@ -331,6 +410,7 @@ function goEdit() {
   editLoading.value = true
   getProject(projectId.value).then(response => {
     editForm.value = { ...response.data }
+    initEditBudgetAmountMap(response.data.budgetSplitList)
     editLoading.value = false
     editOpen.value = true
   }).catch(() => { editLoading.value = false })
@@ -340,15 +420,16 @@ function submitEditForm() {
   proxy.$refs["editRef"].validate(valid => {
     if (!valid) return
     editSubmitting.value = true
+    // 预算总额由后端按细分 Σ 计算，前端不传
     const payload = {
       projectId: editForm.value.projectId,
       projectName: editForm.value.projectName,
       projectType: editForm.value.projectType,
-      budgetTotal: editForm.value.budgetTotal,
       startDate: editForm.value.startDate,
       endDate: editForm.value.endDate,
       deptId: editForm.value.deptId,
-      remark: editForm.value.remark
+      remark: editForm.value.remark,
+      budgetSplitList: buildEditBudgetSplitList()
     }
     updateProject(payload).then(() => {
       proxy.$modal.msgSuccess("修改成功")
@@ -455,4 +536,12 @@ function formatBudget(val) {
 <style scoped>
 .card-title { font-weight: 600; }
 .form-tip { margin-left: 12px; color: #909399; font-size: 12px; }
+.budget-split-box { width: 100%; }
+.budget-group { margin-bottom: 14px; }
+.budget-group-title { font-weight: 600; color: #303133; margin-bottom: 8px; }
+.budget-item-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.budget-item { display: flex; flex-direction: column; gap: 4px; }
+.budget-label { font-size: 13px; color: #606266; }
+.budget-total { margin-top: 12px; color: #303133; }
+.budget-total-value { font-size: 16px; color: #f56c6c; font-weight: 600; }
 </style>
