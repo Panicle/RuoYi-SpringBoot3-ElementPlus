@@ -30,6 +30,26 @@
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="项目类别" prop="projectCategory">
+        <el-select v-model="queryParams.projectCategory" placeholder="请选择项目类别" clearable style="width: 180px">
+          <el-option
+            v-for="dict in project_category"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="专业分类" prop="specialty">
+        <el-select v-model="queryParams.specialty" placeholder="请选择专业分类" clearable style="width: 180px">
+          <el-option
+            v-for="dict in specialty"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="状态" prop="status">
         <el-select v-model="queryParams.status" placeholder="请选择状态" clearable style="width: 160px">
           <el-option
@@ -40,10 +60,10 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="主持人" prop="leaderId">
+      <el-form-item label="组长" prop="leaderId">
         <el-input
           v-model="queryParams.leaderName"
-          placeholder="请输入主持人姓名"
+          placeholder="请输入组长姓名"
           clearable
           style="width: 160px"
           @keyup.enter="handleQuery"
@@ -128,12 +148,22 @@
           <dict-tag :options="project_type" :value="scope.row.projectType" />
         </template>
       </el-table-column>
+      <el-table-column label="项目类别" align="center" prop="projectCategory" width="130">
+        <template #default="scope">
+          <dict-tag :options="project_category" :value="scope.row.projectCategory" />
+        </template>
+      </el-table-column>
+      <el-table-column label="专业分类" align="center" prop="specialty" width="120">
+        <template #default="scope">
+          <dict-tag :options="specialty" :value="scope.row.specialty" />
+        </template>
+      </el-table-column>
       <el-table-column label="状态" align="center" prop="status" width="90">
         <template #default="scope">
           <dict-tag :options="project_status" :value="scope.row.status" />
         </template>
       </el-table-column>
-      <el-table-column label="主持人" align="center" prop="leaderName" />
+      <el-table-column label="组长" align="center" prop="leaderName" />
       <el-table-column label="所属部门" align="center" prop="deptName" :show-overflow-tooltip="true" />
       <el-table-column label="预算总额" align="center" prop="budgetTotal" width="120">
         <template #default="scope">
@@ -181,7 +211,27 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="主持人" prop="leaderId">
+        <el-form-item label="项目类别" prop="projectCategory">
+          <el-select v-model="form.projectCategory" placeholder="请选择项目类别" clearable style="width: 100%">
+            <el-option
+              v-for="dict in project_category"
+              :key="dict.value"
+              :label="dict.label"
+              :value="dict.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="专业分类" prop="specialty">
+          <el-select v-model="form.specialty" placeholder="请选择专业分类" clearable style="width: 100%">
+            <el-option
+              v-for="dict in specialty"
+              :key="dict.value"
+              :label="dict.label"
+              :value="dict.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="组长" prop="leaderId">
           <el-input v-model="form.leaderName" placeholder="点击右侧按钮选择" readonly>
             <template #append>
               <el-button @click="openLeaderPicker">选择</el-button>
@@ -222,7 +272,7 @@
             :data="enabledDeptOptions"
             :props="{ value: 'id', label: 'label', children: 'children' }"
             value-key="id"
-            placeholder="默认取主持人所属部门"
+            placeholder="默认取组长所属部门"
             clearable
             check-strictly
             style="width: 100%"
@@ -265,7 +315,7 @@
       </template>
     </el-dialog>
 
-    <!-- 主持人选择器（单选） -->
+    <!-- 组长选择器（单选） -->
     <user-picker-dialog ref="leaderPickerRef" @ok="onLeaderPicked" />
   </div>
 </template>
@@ -278,7 +328,7 @@ import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budg
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
-const { project_type, project_status, budget_category } = proxy.useDict("project_type", "project_status", "budget_category")
+const { project_type, project_status, project_category, specialty, budget_category } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "budget_category")
 
 // 预算细分：科目名走字典渲染，金额按科目映射（新增/修改用）
 const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
@@ -337,6 +387,8 @@ const data = reactive({
     projectNo: undefined,
     projectName: undefined,
     projectType: undefined,
+    projectCategory: undefined,
+    specialty: undefined,
     status: undefined,
     leaderId: undefined,
     leaderName: undefined,
@@ -347,7 +399,9 @@ const data = reactive({
     projectNo: [{ required: true, message: "课题编号不能为空", trigger: "blur" }],
     projectName: [{ required: true, message: "课题名称不能为空", trigger: "blur" }],
     projectType: [{ required: true, message: "课题级别不能为空", trigger: "change" }],
-    leaderId: [{ required: true, message: "主持人不能为空", trigger: "change" }]
+    projectCategory: [{ required: true, message: "项目类别不能为空", trigger: "change" }],
+    specialty: [{ required: true, message: "专业分类不能为空", trigger: "change" }],
+    leaderId: [{ required: true, message: "组长不能为空", trigger: "change" }]
   }
 })
 const { form, queryParams, rules } = toRefs(data)
@@ -399,6 +453,8 @@ function reset() {
     projectNo: undefined,
     projectName: undefined,
     projectType: undefined,
+    projectCategory: undefined,
+    specialty: undefined,
     leaderId: undefined,
     leaderName: undefined,
     startDate: undefined,
@@ -467,6 +523,8 @@ function submitForm() {
         projectId: form.value.projectId,
         projectName: form.value.projectName,
         projectType: form.value.projectType,
+        projectCategory: form.value.projectCategory,
+        specialty: form.value.specialty,
         startDate: form.value.startDate,
         endDate: form.value.endDate,
         deptId: form.value.deptId,
@@ -483,6 +541,8 @@ function submitForm() {
         projectNo: form.value.projectNo,
         projectName: form.value.projectName,
         projectType: form.value.projectType,
+        projectCategory: form.value.projectCategory,
+        specialty: form.value.specialty,
         leaderId: form.value.leaderId,
         startDate: form.value.startDate,
         endDate: form.value.endDate,
@@ -556,7 +616,7 @@ function handleArchive(row) {
   }).catch(() => {})
 }
 
-/** 打开主持人选择器 */
+/** 打开组长选择器 */
 function openLeaderPicker() {
   leaderPickerRef.value.show()
 }

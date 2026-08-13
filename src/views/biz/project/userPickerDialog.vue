@@ -1,5 +1,5 @@
 <template>
-  <el-dialog title="选择主持人" v-model="visible" width="800px" top="5vh" append-to-body :close-on-click-modal="false">
+  <el-dialog title="选择组长" v-model="visible" width="800px" top="5vh" append-to-body :close-on-click-modal="false">
     <el-form :model="queryParams" :inline="true" @submit.prevent>
       <el-form-item label="用户名称">
         <el-input

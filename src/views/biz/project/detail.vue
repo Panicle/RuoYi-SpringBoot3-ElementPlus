@@ -17,10 +17,16 @@
         <el-descriptions-item label="课题级别">
           <dict-tag :options="project_type" :value="form.projectType" />
         </el-descriptions-item>
+        <el-descriptions-item label="项目类别">
+          <dict-tag :options="project_category" :value="form.projectCategory" />
+        </el-descriptions-item>
+        <el-descriptions-item label="专业分类">
+          <dict-tag :options="specialty" :value="form.specialty" />
+        </el-descriptions-item>
         <el-descriptions-item label="状态">
           <dict-tag :options="project_status" :value="form.status" />
         </el-descriptions-item>
-        <el-descriptions-item label="主持人">{{ form.leaderName }}</el-descriptions-item>
+        <el-descriptions-item label="组长">{{ form.leaderName }}</el-descriptions-item>
         <el-descriptions-item label="所属部门">{{ form.deptName }}</el-descriptions-item>
         <el-descriptions-item label="预算总额">{{ formatBudget(form.budgetTotal) }}</el-descriptions-item>
         <el-descriptions-item label="预算余额">{{ formatBudget(form.budgetBalance) }}</el-descriptions-item>
@@ -43,10 +49,16 @@
             <el-descriptions-item label="课题级别">
               <dict-tag :options="project_type" :value="form.projectType" />
             </el-descriptions-item>
+            <el-descriptions-item label="项目类别">
+              <dict-tag :options="project_category" :value="form.projectCategory" />
+            </el-descriptions-item>
+            <el-descriptions-item label="专业分类">
+              <dict-tag :options="specialty" :value="form.specialty" />
+            </el-descriptions-item>
             <el-descriptions-item label="状态">
               <dict-tag :options="project_status" :value="form.status" />
             </el-descriptions-item>
-            <el-descriptions-item label="主持人">{{ form.leaderName }}</el-descriptions-item>
+            <el-descriptions-item label="组长">{{ form.leaderName }}</el-descriptions-item>
             <el-descriptions-item label="所属部门">{{ form.deptName }}</el-descriptions-item>
             <el-descriptions-item label="开始日期">{{ form.startDate }}</el-descriptions-item>
             <el-descriptions-item label="结束日期">{{ form.endDate }}</el-descriptions-item>
@@ -119,7 +131,7 @@
                   @click="openChangeHost(scope.row)"
                   v-hasPermi="['biz:project:member']"
                   :disabled="form.status === 'ARCHIVED'"
-                >换主持人</el-button>
+                >换组长</el-button>
                 <el-button
                   link
                   type="primary"
@@ -148,7 +160,7 @@
       <el-form label-width="100px">
         <el-form-item label="角色">
           <el-tag type="info">参与人（PARTICIPANT）</el-tag>
-          <span class="form-tip">主持人请用"换主持人"</span>
+          <span class="form-tip">组长请用"换组长"</span>
         </el-form-item>
         <el-form-item label="选择用户">
           <el-input
@@ -181,14 +193,14 @@
       </template>
     </el-dialog>
 
-    <!-- 换主持人对话框（带二次确认） -->
-    <el-dialog title="换主持人" v-model="changeHostOpen" width="520px" append-to-body :close-on-click-modal="false">
+    <!-- 换组长对话框（带二次确认） -->
+    <el-dialog title="换组长" v-model="changeHostOpen" width="520px" append-to-body :close-on-click-modal="false">
       <el-form label-width="100px">
-        <el-form-item label="当前主持人">
+        <el-form-item label="当前组长">
           <span>{{ currentLeaderName }}</span>
         </el-form-item>
-        <el-form-item label="新主持人">
-          <el-select v-model="newLeaderUserId" placeholder="请从当前成员中选择新主持人" style="width: 100%">
+        <el-form-item label="新组长">
+          <el-select v-model="newLeaderUserId" placeholder="请从当前成员中选择新组长" style="width: 100%">
             <el-option
               v-for="m in nonHostMembers"
               :key="m.userId"
@@ -200,7 +212,7 @@
         <el-form-item>
           <el-alert type="warning" :closable="false" show-icon>
             <template #title>
-              换主持人将把当前主持人降级为参与人，并把新主持人提升为主持人，操作不可撤销。
+              换组长将把当前组长降级为参与人，并把新组长提升为组长，操作不可撤销。
             </template>
           </el-alert>
         </el-form-item>
@@ -225,6 +237,16 @@
         <el-form-item label="课题级别" prop="projectType">
           <el-select v-model="editForm.projectType" placeholder="请选择课题级别" clearable style="width: 100%">
             <el-option v-for="dict in project_type" :key="dict.value" :label="dict.label" :value="dict.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目类别" prop="projectCategory">
+          <el-select v-model="editForm.projectCategory" placeholder="请选择项目类别" clearable style="width: 100%">
+            <el-option v-for="dict in project_category" :key="dict.value" :label="dict.label" :value="dict.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="专业分类" prop="specialty">
+          <el-select v-model="editForm.specialty" placeholder="请选择专业分类" clearable style="width: 100%">
+            <el-option v-for="dict in specialty" :key="dict.value" :label="dict.label" :value="dict.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="预算总额">
@@ -277,7 +299,7 @@ import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budg
 const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
-const { project_type, project_status, member_role, budget_category } = proxy.useDict("project_type", "project_status", "member_role", "budget_category")
+const { project_type, project_status, project_category, specialty, member_role, budget_category } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "member_role", "budget_category")
 
 // 预算细分：科目名走字典渲染
 const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
@@ -353,7 +375,7 @@ const userSearchList = ref([])
 const pickedUserIds = ref([])
 const addMemberKeyword = ref("")
 
-// 换主持人
+// 换组长
 const changeHostOpen = ref(false)
 const newLeaderUserId = ref(undefined)
 const currentLeaderName = computed(() => memberList.value.find(m => m.role === "HOST")?.nickName || memberList.value.find(m => m.role === "HOST")?.userName || "")
@@ -366,7 +388,9 @@ const editSubmitting = ref(false)
 const editForm = ref({})
 const editRules = {
   projectName: [{ required: true, message: "课题名称不能为空", trigger: "blur" }],
-  projectType: [{ required: true, message: "课题级别不能为空", trigger: "change" }]
+  projectType: [{ required: true, message: "课题级别不能为空", trigger: "change" }],
+  projectCategory: [{ required: true, message: "项目类别不能为空", trigger: "change" }],
+  specialty: [{ required: true, message: "专业分类不能为空", trigger: "change" }]
 }
 
 onMounted(() => {
@@ -425,6 +449,8 @@ function submitEditForm() {
       projectId: editForm.value.projectId,
       projectName: editForm.value.projectName,
       projectType: editForm.value.projectType,
+      projectCategory: editForm.value.projectCategory,
+      specialty: editForm.value.specialty,
       startDate: editForm.value.startDate,
       endDate: editForm.value.endDate,
       deptId: editForm.value.deptId,
@@ -485,7 +511,7 @@ function submitAddMember() {
 
 function handleDeleteMember(row) {
   if (row.role === "HOST" && hostCount.value <= 1) {
-    proxy.$modal.msgWarning("唯一主持人不可删除，请先换主持人")
+    proxy.$modal.msgWarning("唯一组长不可删除，请先换组长")
     return
   }
   proxy.$modal.confirm('确认删除成员"' + (row.nickName || row.userName) + '"吗？').then(() => {
@@ -512,15 +538,15 @@ function openChangeHost() {
 
 function confirmChangeHost() {
   if (!newLeaderUserId.value) {
-    proxy.$modal.msgWarning("请先选择新主持人")
+    proxy.$modal.msgWarning("请先选择新组长")
     return
   }
   const target = memberList.value.find(m => m.userId === newLeaderUserId.value)
   const newName = target ? (target.nickName || target.userName) : ""
-  proxy.$modal.confirm('确认将主持人更换为"' + newName + '"吗？').then(() => {
+  proxy.$modal.confirm('确认将组长更换为"' + newName + '"吗？').then(() => {
     return changeHost(projectId.value, newLeaderUserId.value)
   }).then(() => {
-    proxy.$modal.msgSuccess("换主持人成功")
+    proxy.$modal.msgSuccess("换组长成功")
     changeHostOpen.value = false
     loadMembers()
     loadDetail()
