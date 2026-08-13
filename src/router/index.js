@@ -131,6 +131,20 @@ export const dynamicRoutes = [
     ]
   },
   {
+    path: '/biz/project/detail',
+    component: Layout,
+    hidden: true,
+    permissions: ['biz:project:detail'],
+    children: [
+      {
+        path: ':projectId(\\d+)',
+        component: () => import('@/views/biz/project/detail'),
+        name: 'ProjectDetail',
+        meta: { title: '课题详情', activeMenu: '/biz/project' }
+      }
+    ]
+  },
+  {
     path: '/monitor/job-log',
     component: Layout,
     hidden: true,
