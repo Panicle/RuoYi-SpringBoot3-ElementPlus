@@ -10,11 +10,6 @@
           @keyup.enter="handleQuery"
         />
       </el-form-item>
-      <el-form-item label="单位类型" prop="unitType">
-        <el-select v-model="queryParams.unitType" placeholder="单位类型" clearable style="width: 200px">
-          <el-option v-for="dict in unit_type" :key="dict.value" :label="dict.label" :value="dict.value" />
-        </el-select>
-      </el-form-item>
       <el-form-item label="单位类别" prop="externalUnitType">
         <el-select v-model="queryParams.externalUnitType" placeholder="单位类别" clearable style="width: 200px">
           <el-option v-for="dict in external_unit_type" :key="dict.value" :label="dict.label" :value="dict.value" />
@@ -48,11 +43,6 @@
       :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
     >
       <el-table-column prop="unitName" label="单位名称" width="280" />
-      <el-table-column prop="unitType" label="单位类型" width="100">
-        <template #default="scope">
-          <dict-tag :options="unit_type" :value="scope.row.unitType" />
-        </template>
-      </el-table-column>
       <el-table-column prop="externalUnitType" label="单位类别" width="100">
         <template #default="scope">
           <dict-tag :options="external_unit_type" :value="scope.row.externalUnitType" />
@@ -110,13 +100,6 @@
           </el-col>
           <template v-if="isTopLevel">
             <el-col :span="12">
-              <el-form-item label="单位类型" prop="unitType">
-                <el-select v-model="form.unitType" placeholder="请选择单位类型" clearable style="width: 100%">
-                  <el-option v-for="dict in unit_type" :key="dict.value" :label="dict.label" :value="dict.value" />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col :span="12">
               <el-form-item label="单位类别" prop="externalUnitType">
                 <el-select v-model="form.externalUnitType" placeholder="请选择单位类别" clearable style="width: 100%">
                   <el-option v-for="dict in external_unit_type" :key="dict.value" :label="dict.label" :value="dict.value" />
@@ -125,11 +108,6 @@
             </el-col>
           </template>
           <template v-else>
-            <el-col :span="12">
-              <el-form-item label="单位类型">
-                <el-input :model-value="unitTypeLabel" disabled />
-              </el-form-item>
-            </el-col>
             <el-col :span="12">
               <el-form-item label="单位类别">
                 <el-input :model-value="externalUnitTypeLabel" disabled />
@@ -197,7 +175,7 @@ import { listUnit, getUnit, delUnit, addUnit, updateUnit, unitExcludeChild } fro
 import ContactDialog from "./contactDialog.vue"
 
 const { proxy } = getCurrentInstance();
-const { unit_type, external_unit_type, company_type, company_category } = proxy.useDict("unit_type", "external_unit_type", "company_type", "company_category");
+const { external_unit_type, company_type, company_category } = proxy.useDict("external_unit_type", "company_type", "company_category");
 
 const unitList = ref([]);
 const open = ref(false);
@@ -213,7 +191,6 @@ const data = reactive({
   form: {},
   queryParams: {
     unitName: undefined,
-    unitType: undefined,
     externalUnitType: undefined
   },
   rules: {
@@ -229,7 +206,6 @@ const { queryParams, form, rules } = toRefs(data);
 const isTopLevel = computed(() => !form.value.parentId || form.value.parentId === 0);
 const isCompany = computed(() => form.value.externalUnitType === "COMPANY");
 const isSchool = computed(() => form.value.externalUnitType === "SCHOOL");
-const unitTypeLabel = computed(() => dictLabel(unit_type.value, form.value.unitType));
 const externalUnitTypeLabel = computed(() => dictLabel(external_unit_type.value, form.value.externalUnitType));
 
 function dictLabel(options, value) {
@@ -259,7 +235,6 @@ function reset() {
     unitId: undefined,
     parentId: undefined,
     unitName: undefined,
-    unitType: "EXTERNAL",
     externalUnitType: undefined,
     companyType: undefined,
     companyCategory: undefined,
@@ -303,7 +278,6 @@ function handleAdd(row) {
     }
     form.value.parentId = row.unitId;
     // 子单位类型继承父级
-    form.value.unitType = row.unitType;
     form.value.externalUnitType = row.externalUnitType;
   }
   open.value = true;
