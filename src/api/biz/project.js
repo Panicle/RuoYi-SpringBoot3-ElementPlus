@@ -105,3 +105,29 @@ export function changeHost(projectId, newLeaderUserId) {
     data: { projectId, newLeaderUserId }
   })
 }
+
+// 查询课题关联单位列表（返回含 unitName/externalUnitType）
+export function listProjectUnit(query) {
+  return request({
+    url: '/biz/project/unit/list',
+    method: 'get',
+    params: query
+  })
+}
+
+// 新增课题关联单位（body: projectId/unitId/cooperationType）
+export function addProjectUnit(data) {
+  return request({
+    url: '/biz/project/unit',
+    method: 'post',
+    data: data
+  })
+}
+
+// 删除课题关联单位（批量）
+export function delProjectUnit(ids) {
+  return request({
+    url: '/biz/project/unit/' + ids,
+    method: 'delete'
+  })
+}
