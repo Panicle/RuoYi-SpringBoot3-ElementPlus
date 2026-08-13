@@ -134,7 +134,7 @@ export const dynamicRoutes = [
     path: '/biz/project/detail',
     component: Layout,
     hidden: true,
-    permissions: ['biz:project:detail'],
+    permissions: ['biz:project:detail', 'biz:project:member'],
     children: [
       {
         path: ':projectId(\\d+)',
