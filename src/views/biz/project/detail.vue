@@ -152,6 +152,47 @@
             @pagination="loadMembers"
           />
         </el-tab-pane>
+
+        <el-tab-pane label="合作单位" name="unit">
+          <el-row :gutter="10" class="mb8">
+            <el-col :span="1.5">
+              <el-button
+                type="primary"
+                plain
+                icon="Plus"
+                @click="openAddUnit"
+                v-hasPermi="['biz:project:unit']"
+                :disabled="form.status === 'ARCHIVED'"
+              >添加单位</el-button>
+            </el-col>
+          </el-row>
+
+          <el-table v-loading="unitLoading" :data="unitList">
+            <el-table-column label="单位名称" align="center" prop="unitName" :show-overflow-tooltip="true" />
+            <el-table-column label="单位类别" align="center" width="110">
+              <template #default="scope">
+                <dict-tag :options="external_unit_type" :value="scope.row.externalUnitType" />
+              </template>
+            </el-table-column>
+            <el-table-column label="合作方式" align="center" width="110">
+              <template #default="scope">
+                <dict-tag :options="cooperation_type" :value="scope.row.cooperationType" />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" align="center" width="120" class-name="small-padding fixed-width">
+              <template #default="scope">
+                <el-button
+                  link
+                  type="primary"
+                  icon="Delete"
+                  @click="handleRemoveUnit(scope.row)"
+                  v-hasPermi="['biz:project:unit']"
+                  :disabled="form.status === 'ARCHIVED'"
+                >移除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -288,18 +329,47 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 添加合作单位对话框 -->
+    <el-dialog title="添加合作单位" v-model="addUnitOpen" width="520px" append-to-body :close-on-click-modal="false">
+      <el-form ref="addUnitRef" :model="addUnitForm" :rules="addUnitRules" label-width="100px">
+        <el-form-item label="合作单位" prop="unitId">
+          <el-tree-select
+            v-model="addUnitForm.unitId"
+            :data="unitTreeOptions"
+            :props="{ value: 'id', label: 'label', children: 'children' }"
+            value-key="id"
+            placeholder="请选择合作单位"
+            check-strictly
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="合作方式" prop="cooperationType">
+          <el-select v-model="addUnitForm.cooperationType" placeholder="请选择合作方式" clearable style="width: 100%">
+            <el-option v-for="dict in cooperation_type" :key="dict.value" :label="dict.label" :value="dict.value" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button type="primary" @click="submitAddUnit">确 定</el-button>
+          <el-button @click="addUnitOpen = false">取 消</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="ProjectDetail">
-import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject } from "@/api/biz/project"
+import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject, listProjectUnit, addProjectUnit, delProjectUnit } from "@/api/biz/project"
+import { treeUnit } from "@/api/biz/unit"
 import { listUser } from "@/api/system/user"
 import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
 
 const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
-const { project_type, project_status, project_category, specialty, member_role, budget_category } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "member_role", "budget_category")
+const { project_type, project_status, project_category, specialty, member_role, budget_category, cooperation_type, external_unit_type } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "member_role", "budget_category", "cooperation_type", "external_unit_type")
 
 // 预算细分：科目名走字典渲染
 const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
@@ -393,14 +463,26 @@ const editRules = {
   specialty: [{ required: true, message: "专业分类不能为空", trigger: "change" }]
 }
 
+// 合作单位
+const unitLoading = ref(false)
+const unitList = ref([])
+const addUnitOpen = ref(false)
+const unitTreeOptions = ref([])
+const addUnitForm = ref({})
+const addUnitRules = {
+  unitId: [{ required: true, message: "请选择合作单位", trigger: "change" }],
+  cooperationType: [{ required: true, message: "请选择合作方式", trigger: "change" }]
+}
+
 onMounted(() => {
   const tab = route.query && route.query.activeTab
-  if (tab === "member" || tab === "info") activeTab.value = tab
+  if (tab === "member" || tab === "info" || tab === "unit") activeTab.value = tab
   loadDetail()
 })
 
 watch(activeTab, val => {
   if (val === "member") loadMembers()
+  if (val === "unit") loadUnits()
 })
 
 function loadDetail() {
@@ -556,6 +638,44 @@ function confirmChangeHost() {
 function formatBudget(val) {
   if (val == null || val === "") return "-"
   return Number(val).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// ===== 合作单位 tab =====
+
+function loadUnits() {
+  unitLoading.value = true
+  listProjectUnit({ projectId: projectId.value }).then(response => {
+    unitList.value = response.data || []
+    unitLoading.value = false
+  }).catch(() => { unitLoading.value = false })
+}
+
+function openAddUnit() {
+  addUnitForm.value = { projectId: projectId.value, unitId: undefined, cooperationType: undefined }
+  treeUnit().then(response => {
+    unitTreeOptions.value = response.data || []
+  })
+  addUnitOpen.value = true
+}
+
+function submitAddUnit() {
+  proxy.$refs["addUnitRef"].validate(valid => {
+    if (!valid) return
+    addProjectUnit(addUnitForm.value).then(() => {
+      proxy.$modal.msgSuccess("添加成功")
+      addUnitOpen.value = false
+      loadUnits()
+    })
+  })
+}
+
+function handleRemoveUnit(row) {
+  proxy.$modal.confirm('确认移除合作单位"' + row.unitName + '"吗？').then(() => {
+    return delProjectUnit(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess("移除成功")
+    loadUnits()
+  }).catch(() => {})
 }
 </script>
 
