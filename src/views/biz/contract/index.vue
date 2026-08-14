@@ -85,7 +85,7 @@
         </template>
       </el-table-column>
       <el-table-column label="签订日期" align="center" prop="signDate" width="110" />
-      <el-table-column label="到期日期" align="center" prop="endDate" width="110" />
+      <el-table-column label="到期日期" align="center" prop="expireDate" width="110" />
       <el-table-column label="状态" align="center" prop="status" width="90">
         <template #default="scope">
           <dict-tag :options="contract_status" :value="scope.row.status" />
@@ -167,8 +167,8 @@
         <el-form-item label="生效日期" prop="startDate">
           <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择生效日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="到期日期" prop="endDate">
-          <el-date-picker v-model="form.endDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择到期日期" style="width: 100%" />
+        <el-form-item label="到期日期" prop="expireDate">
+          <el-date-picker v-model="form.expireDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择到期日期" style="width: 100%" />
         </el-form-item>
         <el-form-item v-if="!!form.contractId" label="状态" prop="status">
           <el-select v-model="form.status" placeholder="请选择状态" clearable style="width: 100%">
@@ -225,11 +225,9 @@ import { treeUnit } from "@/api/biz/unit"
 import NodeDialog from "./nodeDialog.vue"
 
 const { proxy } = getCurrentInstance()
-const { contract_type, contract_status, node_type, node_status } = proxy.useDict(
+const { contract_type, contract_status } = proxy.useDict(
   "contract_type",
-  "contract_status",
-  "node_type",
-  "node_status"
+  "contract_status"
 )
 
 const baseUrl = import.meta.env.VITE_APP_BASE_API
@@ -243,8 +241,6 @@ const formLoading = ref(false)
 const submitLoading = ref(false)
 const showSearch = ref(true)
 const ids = ref([])
-const single = ref(true)
-const multiple = ref(true)
 const total = ref(0)
 const title = ref("")
 const projectOptions = ref([])
@@ -336,8 +332,9 @@ function handleBeforeUpload(file) {
 function handleUploadSuccess(res) {
   proxy.$modal.closeLoading()
   if (res.code === 200) {
+    const fileName = res.originalFilename || getFileName(res.fileName)
     form.value.fileUrl = res.fileName
-    form.value.fileName = res.fileName
+    form.value.fileName = fileName
     proxy.$modal.msgSuccess("上传成功")
   } else {
     proxy.$modal.msgError(res.msg || "上传失败")
@@ -350,10 +347,17 @@ function handleUploadError() {
   proxy.$modal.msgError("上传文件失败")
 }
 
-/** 清空附件 */
+/** 清空附件：传 null 让后端显式写入空值 */
 function clearUpload() {
-  form.value.fileUrl = undefined
-  form.value.fileName = undefined
+  form.value.fileUrl = null
+  form.value.fileName = null
+}
+
+/** 从路径中剥出文件名（兼容 '/2026/08/abc.pdf' 这种相对路径） */
+function getFileName(path) {
+  if (!path) return ""
+  const idx = path.lastIndexOf("/")
+  return idx > -1 ? path.slice(idx + 1) : path
 }
 
 /** 取消按钮 */
@@ -365,22 +369,22 @@ function cancel() {
 /** 表单重置 */
 function reset() {
   form.value = {
-    contractId: undefined,
-    projectId: undefined,
-    contractNo: undefined,
-    contractName: undefined,
-    contractType: undefined,
+    contractId: null,
+    projectId: null,
+    contractNo: null,
+    contractName: null,
+    contractType: null,
     partyType: "unit",
-    partyUnitId: undefined,
-    partyName: undefined,
-    amount: undefined,
-    signDate: undefined,
-    startDate: undefined,
-    endDate: undefined,
-    status: undefined,
-    fileUrl: undefined,
-    fileName: undefined,
-    remark: undefined
+    partyUnitId: null,
+    partyName: null,
+    amount: null,
+    signDate: null,
+    startDate: null,
+    expireDate: null,
+    status: null,
+    fileUrl: null,
+    fileName: null,
+    remark: null
   }
   proxy.resetForm("contractRef")
 }
@@ -397,11 +401,9 @@ function resetQuery() {
   handleQuery()
 }
 
-/** 多选 */
+/** 多选（保留勾选行 id 备用；当前工具栏无批量动作，仅记 ids） */
 function handleSelectionChange(selection) {
   ids.value = selection.map(item => item.contractId)
-  single.value = selection.length !== 1
-  multiple.value = !selection.length
 }
 
 /** 新增 */
@@ -421,11 +423,23 @@ function handleUpdate(row) {
   loadProjectOptions()
   loadUnitTree()
   getContract(contractId).then(response => {
-    // 回显对方主体：partyUnitId 非空 → unit；空 → manual
     const data = response.data
+    // 回显对方主体：partyUnitId 非空 → unit；空 → manual
     form.value = {
       ...data,
       partyType: data.partyUnitId ? "unit" : "manual"
+    }
+    // 兜底：若详情返回的 projectId 不在课题下拉列表（超 1000 条被截/无权限漏掉），
+    // 临时补一条选项避免下拉显示裸 id
+    if (data.projectId && !projectOptions.value.some(p => p.projectId === data.projectId)) {
+      projectOptions.value = [
+        {
+          projectId: data.projectId,
+          projectNo: data.projectNo || "",
+          projectName: data.projectName || ""
+        },
+        ...projectOptions.value
+      ]
     }
     formLoading.value = false
     open.value = true
@@ -433,19 +447,31 @@ function handleUpdate(row) {
   }).catch(() => { formLoading.value = false })
 }
 
-/** 提交 */
+/** 提交：白名单字段，避免多余字段入参；nullable 字段显式 null 让后端落库 */
 function submitForm() {
   proxy.$refs["contractRef"].validate(valid => {
     if (!valid) return
     submitLoading.value = true
-    // 按 partyType 调整 payload：选单位时清空 partyName（后端会写单位名快照），手填时清空 partyUnitId
-    const isUnit = form.value.partyType === "unit"
+    const f = form.value
+    const isUnit = f.partyType === "unit"
     const payload = {
-      ...form.value,
-      partyUnitId: isUnit ? form.value.partyUnitId : undefined,
-      partyName: isUnit ? undefined : form.value.partyName
+      contractId: f.contractId,
+      projectId: f.projectId,
+      contractNo: f.contractNo,
+      contractName: f.contractName,
+      contractType: f.contractType,
+      // 二选一校验：选单位 → 后端按单位快照写 partyName；手填 → 后端用 partyName
+      partyUnitId: isUnit ? f.partyUnitId : null,
+      partyName: isUnit ? null : f.partyName,
+      amount: f.amount,
+      signDate: f.signDate,
+      startDate: f.startDate,
+      expireDate: f.expireDate,
+      status: f.status,
+      fileUrl: f.fileUrl,
+      remark: f.remark
     }
-    if (form.value.contractId != undefined) {
+    if (f.contractId != null) {
       updateContract(payload).then(() => {
         proxy.$modal.msgSuccess("修改成功")
         open.value = false

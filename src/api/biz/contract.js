@@ -43,16 +43,6 @@ export function delContract(contractIds) {
   })
 }
 
-// 导出合同
-export function exportContract(query) {
-  return request({
-    url: '/biz/contract/export',
-    method: 'post',
-    data: query,
-    responseType: 'blob'
-  })
-}
-
 // 查询合同节点列表
 export function listNode(query) {
   return request({

@@ -33,7 +33,7 @@
       </el-table-column>
       <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width">
         <template #default="scope">
-          <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['biz:contract:node']" :disabled="scope.row.status === 'DONE'">修改</el-button>
+          <el-button link type="primary" icon="Edit" @click="handleUpdate(scope.row)" v-hasPermi="['biz:contract:node']">修改</el-button>
           <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['biz:contract:node']">删除</el-button>
           <el-button link type="primary" icon="Check" @click="openFinishDialog(scope.row)" v-hasPermi="['biz:contract:node']" v-if="scope.row.status !== 'DONE'">完成</el-button>
         </template>
@@ -44,10 +44,10 @@
     <el-dialog :title="nodeTitle" v-model="nodeOpen" width="520px" append-to-body :close-on-click-modal="false">
       <el-form ref="nodeRef" :model="nodeForm" :rules="nodeRules" label-width="100px">
         <el-form-item label="节点名称" prop="nodeName">
-          <el-input v-model="nodeForm.nodeName" placeholder="请输入节点名称" maxlength="200" />
+          <el-input v-model="nodeForm.nodeName" placeholder="请输入节点名称" maxlength="200" :disabled="nodeForm.status === 'DONE'" />
         </el-form-item>
         <el-form-item label="节点类型" prop="nodeType">
-          <el-select v-model="nodeForm.nodeType" placeholder="请选择节点类型" clearable style="width: 100%">
+          <el-select v-model="nodeForm.nodeType" placeholder="请选择节点类型" clearable style="width: 100%" :disabled="nodeForm.status === 'DONE'">
             <el-option
               v-for="dict in node_type"
               :key="dict.value"
@@ -57,7 +57,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="计划日期" prop="planDate">
-          <el-date-picker v-model="nodeForm.planDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择计划日期" style="width: 100%" />
+          <el-date-picker v-model="nodeForm.planDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择计划日期" style="width: 100%" :disabled="nodeForm.status === 'DONE'" />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
           <el-input v-model="nodeForm.remark" type="textarea" :rows="3" placeholder="请输入备注" maxlength="500" />
@@ -86,16 +86,16 @@
             :headers="uploadHeaders"
             :show-file-list="false"
             :before-upload="handleBeforeUpload"
-            :on-success="handleUploadSuccess"
+            :on-success="handleVoucherSuccess"
             :on-error="handleUploadError"
           >
             <el-button type="primary" plain icon="Upload">上传凭证</el-button>
           </el-upload>
           <div v-if="finishForm.voucherUrl" class="uploaded-file">
             <el-link :href="baseUrl + finishForm.voucherUrl" target="_blank" type="primary" underline="never">
-              <span>{{ finishForm.voucherUrl }}</span>
+              <span>{{ finishForm.voucherName || getFileName(finishForm.voucherUrl) }}</span>
             </el-link>
-            <el-link type="danger" underline="never" style="margin-left: 12px;" @click="finishForm.voucherUrl = undefined">删除</el-link>
+            <el-link type="danger" underline="never" style="margin-left: 12px;" @click="finishForm.voucherUrl = null">删除</el-link>
           </div>
         </el-form-item>
       </el-form>
@@ -144,11 +144,12 @@ const finishRules = {
   actualDate: [{ required: true, message: "实际完成日期不能为空", trigger: "change" }]
 }
 
-/** 父组件调用打开 */
+/** 父组件调用打开；每次 show() 重置 currentContract/currentNode，避免父页面跨实例串扰 */
 function show(row) {
   currentContract.value = row || {}
   dialogTitle.value = "履约节点 - " + (currentContract.value.contractName || `合同 #${currentContract.value.contractId || ''}`)
   visible.value = true
+  currentNode.value = null
   getNodes()
 }
 
@@ -167,21 +168,24 @@ function getNodes() {
 
 function resetNodeForm() {
   nodeForm.value = {
-    nodeId: undefined,
+    nodeId: null,
     contractId: currentContract.value.contractId,
-    nodeName: undefined,
-    nodeType: undefined,
-    planDate: undefined,
-    remark: undefined
+    nodeName: null,
+    nodeType: null,
+    planDate: null,
+    status: null,
+    remark: null
   }
   proxy.resetForm("nodeRef")
 }
 
-function resetFinishForm() {
+function resetFinishForm(row) {
+  // 一次性写入 nodeId：节点完成动作只对单一节点生效，关闭后被 show() 重置
   finishForm.value = {
-    nodeId: undefined,
-    actualDate: undefined,
-    voucherUrl: undefined
+    nodeId: row?.nodeId,
+    actualDate: null,
+    voucherUrl: null,
+    voucherName: null
   }
   proxy.resetForm("finishRef")
 }
@@ -194,19 +198,37 @@ function handleAdd() {
 
 function handleUpdate(row) {
   resetNodeForm()
-  nodeForm.value = { ...row }
+  // 编辑：保留 status，便于模板渲染 disabled
+  nodeForm.value = {
+    nodeId: row.nodeId,
+    contractId: currentContract.value.contractId,
+    nodeName: row.nodeName,
+    nodeType: row.nodeType,
+    planDate: row.planDate,
+    status: row.status,
+    remark: row.remark
+  }
   nodeTitle.value = "修改节点"
   nodeOpen.value = true
 }
 
+/** 提交：白名单字段，避免把 overdue/status/actualDate 一起 PUT */
 function submitNode() {
   proxy.$refs["nodeRef"].validate(valid => {
     if (!valid) return
     nodeSubmitting.value = true
-    const payload = { ...nodeForm.value, contractId: currentContract.value.contractId }
-    const action = payload.nodeId != undefined ? updateNode(payload) : addNode(payload)
+    const f = nodeForm.value
+    const payload = {
+      nodeId: f.nodeId,
+      contractId: currentContract.value.contractId,
+      nodeName: f.nodeName,
+      nodeType: f.nodeType,
+      planDate: f.planDate,
+      remark: f.remark
+    }
+    const action = payload.nodeId != null ? updateNode(payload) : addNode(payload)
     action.then(() => {
-      proxy.$modal.msgSuccess(payload.nodeId != undefined ? "修改成功" : "新增成功")
+      proxy.$modal.msgSuccess(payload.nodeId != null ? "修改成功" : "新增成功")
       nodeOpen.value = false
       getNodes()
     }).finally(() => { nodeSubmitting.value = false })
@@ -224,7 +246,7 @@ function handleDelete(row) {
 
 function openFinishDialog(row) {
   currentNode.value = row
-  resetFinishForm()
+  resetFinishForm(row)
   finishOpen.value = true
 }
 
@@ -233,7 +255,7 @@ function submitFinish() {
     if (!valid) return
     finishSubmitting.value = true
     finishNode({
-      nodeId: finishForm.value.nodeId || currentNode.value?.nodeId,
+      nodeId: finishForm.value.nodeId,
       actualDate: finishForm.value.actualDate,
       voucherUrl: finishForm.value.voucherUrl
     }).then(() => {
@@ -255,23 +277,29 @@ function handleBeforeUpload(file) {
   return true
 }
 
-// 上传成功：根据当前是新增节点还是完成节点，写回对应字段
-function handleUploadSuccess(res) {
+// 凭证上传成功：仅完成弹窗场景触发（节点表单里没有上传控件）；文件名优先 originalFilename，回退到路径末段
+function handleVoucherSuccess(res) {
   proxy.$modal.closeLoading()
+  if (!finishOpen.value) return
   if (res.code === 200) {
-    if (finishOpen.value) {
-      finishForm.value.voucherUrl = res.fileName
-    }
+    finishForm.value.voucherUrl = res.fileName
+    finishForm.value.voucherName = res.originalFilename || getFileName(res.fileName)
     proxy.$modal.msgSuccess("上传成功")
   } else {
     proxy.$modal.msgError(res.msg || "上传失败")
   }
 }
 
-// 上传失败
 function handleUploadError() {
   proxy.$modal.closeLoading()
   proxy.$modal.msgError("上传文件失败")
+}
+
+/** 从路径中剥出文件名（兼容 '/2026/08/abc.pdf' 这种相对路径） */
+function getFileName(path) {
+  if (!path) return ""
+  const idx = path.lastIndexOf("/")
+  return idx > -1 ? path.slice(idx + 1) : path
 }
 
 defineExpose({ show })
