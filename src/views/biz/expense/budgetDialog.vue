@@ -125,8 +125,10 @@ function submitForm() {
     visible.value = false
     emit("success")
   }).catch(err => {
-    // 乐观锁冲突：提示已由请求拦截器展示，这里仅自动刷新当前弹窗内的预算行
-    const msg = err && err.message ? err.message : ""
+    // 乐观锁冲突：提示已由请求拦截器展示，这里仅自动刷新当前弹窗内的预算行。
+    // 拦截器 code=500 时 reject(new Error(msg))，err.message 即后端原始文案；
+    // 其余分支可能 reject 字符串，故三路兜底取文案（终审 P1-1 加固）。
+    const msg = (err && err.message) || (err && err.msg) || String(err || "")
     if (msg.includes("已被他人修改")) {
       loadSplits()
     }
