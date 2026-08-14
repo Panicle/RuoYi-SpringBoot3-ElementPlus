@@ -257,9 +257,15 @@ const budgetRows = computed(() => {
   const summaryMap = {}
   ;(budgetSummary.value.splits || []).forEach(s => { if (s && s.category) summaryMap[s.category] = s })
   return BUDGET_CATEGORIES.map(category => {
-    const row = splitMap[category] || { category, budgetAmount: 0, usedAmount: 0, balance: 0, version: 0 }
+    const row = splitMap[category] || { category, budgetAmount: 0, usedAmount: 0, balance: 0, version: null }
     const fromSummary = summaryMap[category]
-    const warnLevel = fromSummary && fromSummary.warnLevel !== undefined ? fromSummary.warnLevel : calcWarnLevel(row)
+    // 后端 summary 标志优先：alertFlag=true 且 alertLevel 非空时取后端；后端字段缺失（undefined）才落前端公式兜底
+    let warnLevel
+    if (fromSummary && fromSummary.alertFlag === true && fromSummary.alertLevel) {
+      warnLevel = fromSummary.alertLevel
+    } else {
+      warnLevel = calcWarnLevel(row)
+    }
     return { ...row, category, warnLevel }
   })
 })
@@ -281,10 +287,15 @@ const summaryAlertCount = computed(() => {
   return budgetRows.value.filter(r => r.warnLevel).length
 })
 
-/** 双阈值预警兜底计算（后端 summary 未返回 warnLevel 时使用）：balance<=0 → CRITICAL；balance<=1000 或 balance/budget<=5% → WARN */
+/** 双阈值预警兜底计算（后端 summary 未返回 alertFlag/alertLevel 时使用）。
+ *  与后端 §4.3 对齐：预算=0 且已用=0 的科目不判预警（避免未编预算的课题整屏标红）。
+ *  其余：balance<=0 → CRITICAL；balance<=1000 或 balance/budget<=5% → WARN。
+ */
 function calcWarnLevel(row) {
   const budget = Number(row.budgetAmount) || 0
+  const used = Number(row.usedAmount) || 0
   const balance = Number(row.balance) || 0
+  if (budget === 0 && used === 0) return null
   if (balance <= 0) return "CRITICAL"
   if (balance <= 1000) return "WARN"
   if (budget > 0 && balance / budget <= 0.05) return "WARN"

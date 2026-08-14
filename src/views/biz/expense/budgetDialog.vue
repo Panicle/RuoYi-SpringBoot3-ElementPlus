@@ -95,24 +95,30 @@ function loadSplits() {
   loading.value = true
   listBudget({ projectId: currentProject.value.projectId }).then(response => {
     const splits = response.rows || response.data || []
+    // 先全部置 0/0，未在 list 中出现的科目也保底能提交（但因 §2.1 唯一索引，后端再决定 upsert）
     BUDGET_CATEGORIES.forEach(c => { amountMap[c] = 0; versionMap[c] = 0 })
     splits.forEach(s => {
       if (s && s.category && BUDGET_CATEGORIES.includes(s.category)) {
         amountMap[s.category] = s.budgetAmount == null ? 0 : Number(s.budgetAmount)
-        versionMap[s.category] = s.version == null ? 0 : s.version
+        // version 必须保留 null —— 后端据此走 INSERT（库中不存在该科目）而非 UPDATE（乐观锁）
+        versionMap[s.category] = s.version
       }
     })
     loading.value = false
   }).catch(() => { loading.value = false })
 }
 
-/** 提交：每行携带 version（乐观锁，从 list 接口原样回传） */
+/** 提交：每行携带 version（乐观锁，从 list 接口原样回传）。
+ *  显式保留 version=null：后端据此对库中不存在的新科目走 INSERT 路径；
+ *  若为数字则走乐观锁 UPDATE，零影响行则返回"已被他人修改"。
+ *  不要用 `version: versionMap[category] == null ? 0 : ...` 把 null 吞成 0，否则新科目会被错误地 UPDATE。
+ */
 function submitForm() {
   submitLoading.value = true
   const splits = BUDGET_CATEGORIES.map(category => ({
     category,
     budgetAmount: amountMap[category] == null ? 0 : amountMap[category],
-    version: versionMap[category] == null ? 0 : versionMap[category]
+    version: versionMap[category] == null ? null : versionMap[category]
   }))
   adjustBudget({ projectId: currentProject.value.projectId, splits }).then(() => {
     proxy.$modal.msgSuccess("预算调整成功")
