@@ -211,7 +211,7 @@ import { getToken } from "@/utils/auth"
 import { listProject } from "@/api/biz/project"
 import { listUser } from "@/api/system/user"
 import {
-  listSalary, saveSalary, importSalary, importSalaryTemplate, exportSalary,
+  listSalary, saveSalary, importSalaryTemplate,
   listBudget, saveBudget
 } from "@/api/biz/rd"
 
@@ -389,6 +389,8 @@ function handleExport() {
 const projectOptions = ref([])
 const budgetRows = ref([])
 const budgetLoading = ref(false)
+// 服务端原值快照（month -> totalAmount），保存时 diff 只提交用户改动月，避免以 0 覆盖未改存量
+const budgetOriginal = ref({})
 const budgetQuery = reactive({
   projectId: undefined,
   year: undefined
@@ -402,23 +404,28 @@ function loadProjectOptions() {
 
 function loadBudget() {
   budgetRows.value = []
+  budgetOriginal.value = {}
   if (!budgetQuery.projectId || !budgetQuery.year) return
   budgetLoading.value = true
   listBudget({ projectId: budgetQuery.projectId, year: budgetQuery.year }).then(response => {
-    // 后端缺月返回 budgetId=null 零值行；客户端再补齐 12 行
-    const rows = response.rows || []
+    // 后端 AjaxResult：数组在 response.data（非分页 rows）
+    const rows = response.data || []
     const byMonth = {}
     rows.forEach(r => { if (r && r.month != null) byMonth[r.month] = r })
+    const originalMap = {}
     const result = []
     for (let m = 1; m <= 12; m++) {
       const exist = byMonth[m]
+      const totalAmount = exist ? Number(exist.totalAmount) || 0 : 0
+      originalMap[m] = totalAmount
       result.push({
         month: m,
-        totalAmount: exist ? Number(exist.totalAmount) || 0 : 0,
+        totalAmount: totalAmount,
         budgetId: exist ? exist.budgetId || null : null
       })
     }
     budgetRows.value = result
+    budgetOriginal.value = originalMap
     budgetLoading.value = false
   }).catch(() => { budgetLoading.value = false })
 }
@@ -428,10 +435,14 @@ function handleSaveBudget() {
     proxy.$modal.msgError("请先选择课题与年份")
     return
   }
-  const months = budgetRows.value.map(r => ({
-    month: r.month,
-    totalAmount: Number(r.totalAmount) || 0
-  }))
+  // 只提交用户实际改动的月份，未改月不进 payload（后端视为不更新），避免清零 CONFIRMED 存量
+  const months = budgetRows.value
+    .filter(r => Number(r.totalAmount) !== budgetOriginal.value[r.month])
+    .map(r => ({ month: r.month, totalAmount: Number(r.totalAmount) || 0 }))
+  if (months.length === 0) {
+    proxy.$modal.msgWarning("未检测到预算改动")
+    return
+  }
   saveBudget({
     projectId: budgetQuery.projectId,
     year: budgetQuery.year,

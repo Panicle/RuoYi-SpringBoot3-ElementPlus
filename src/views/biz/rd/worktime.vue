@@ -135,7 +135,6 @@
 import { listProject } from "@/api/biz/project"
 import { listUser } from "@/api/system/user"
 import { getWorktimeCalendar, saveWorktime, copyWorktimeLastMonth, listWorktimeMonthly } from "@/api/biz/rd"
-import { checkPermi } from "@/utils/permission"
 import useUserStore from "@/store/modules/user"
 
 const { proxy } = getCurrentInstance()
@@ -146,8 +145,12 @@ const weekHeaders = ["一", "二", "三", "四", "五", "六", "日"]
 const projectOptions = ref([])
 const userOptions = ref([])
 const currentUserId = computed(() => Number(useUserStore().id) || undefined)
-// 普通用户（无 biz:rd:salary:save）锁定本人
-const lockedResearcher = computed(() => !checkPermi(['biz:rd:salary:save']))
+// 按角色精确判定：仅当用户角色集恰为 [researcher]（纯科研人员，不含 admin/leader/science_admin/office/labor_hr/dept_leader）时锁定本人；
+// 室主任/科管等管理角色具备本室/全所查看权限，不锁，可切换人员查看日历
+const lockedResearcher = computed(() => {
+  const roles = useUserStore().roles || []
+  return roles.length === 1 && roles[0] === 'researcher'
+})
 
 const query = reactive({
   projectId: undefined,
