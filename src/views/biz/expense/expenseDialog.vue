@@ -30,7 +30,9 @@
         <el-date-picker v-model="addForm.expenseDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择支出日期" style="width: 100%" />
       </el-form-item>
       <el-form-item label="税率(%)">
-        <el-input-number v-model="addForm.taxRate" :min="0" :max="100" :precision="2" controls-position="right" style="width: 100%" />
+        <el-select v-model="addForm.taxRate" placeholder="请选择税率" clearable style="width: 100%">
+          <el-option v-for="dict in tax_rate" :key="dict.value" :label="dict.label" :value="dict.value" />
+        </el-select>
       </el-form-item>
       <el-form-item label="凭证">
         <el-upload
@@ -100,7 +102,7 @@ import { listBudget, addExpense, refundExpense } from "@/api/biz/expense"
 import { buildBudgetCategoryMap } from "@/views/biz/project/budgetSplit"
 
 const { proxy } = getCurrentInstance()
-const { budget_category } = proxy.useDict("budget_category")
+const { budget_category, tax_rate } = proxy.useDict("budget_category", "tax_rate")
 const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
 
 const emit = defineEmits(["success"])
