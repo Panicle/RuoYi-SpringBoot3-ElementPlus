@@ -146,10 +146,12 @@ const refTypeOptions = [
 
 const userStore = useUserStore()
 // 手动扫描：需消除权限 + admin/science_admin 角色（与后端 @ss.hasAnyRoles('admin,science_admin') 对齐）
+// 注意：admin 的 permissions 恒为通配符 ["*:*:*"]（后端 SysPermissionService 对 isAdmin 直接返回），须显式兼容
 const showScan = computed(() => {
   const roles = userStore.roles || []
   const permissions = userStore.permissions || []
-  return permissions.includes("biz:alert:resolve") && roles.some(r => ["admin", "science_admin"].includes(r))
+  const hasResolvePerm = permissions.includes("*:*:*") || permissions.includes("biz:alert:resolve")
+  return hasResolvePerm && roles.some(r => ["admin", "science_admin"].includes(r))
 })
 
 const alertList = ref([])
