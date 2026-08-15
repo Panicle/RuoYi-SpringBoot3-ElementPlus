@@ -75,7 +75,7 @@
       </el-table-column>
       <el-table-column label="提交人" align="center" width="110">
         <template #default="scope">
-          <span>{{ scope.row.submitterId || scope.row.uploadBy || '-' }}</span>
+          <span>{{ scope.row.submitterName || scope.row.uploadBy || '-' }}</span>
         </template>
       </el-table-column>
       <el-table-column label="计划提交日期" align="center" prop="planSubmitDate" width="120" />
@@ -92,8 +92,8 @@
       <el-table-column label="操作" align="center" width="240" class-name="small-padding fixed-width">
         <template #default="scope">
           <el-button v-if="!scope.row.approvalStatus" link type="primary" icon="Promotion" @click="handleSubmit(scope.row)" v-hasPermi="['biz:document:submit']">发起审批</el-button>
-          <el-button v-else-if="scope.row.approvalStatus === 'REJECTED'" link type="primary" icon="RefreshLeft" @click="handleResubmit(scope.row)" v-hasPermi="['biz:document:submit']">重报</el-button>
-          <el-button v-else link type="primary" icon="History" @click="openHistoryDialog(scope.row)" v-hasPermi="['biz:approval:history']">审批历史</el-button>
+          <el-button v-if="scope.row.approvalStatus === 'REJECTED'" link type="primary" icon="RefreshLeft" @click="handleResubmit(scope.row)" v-hasPermi="['biz:document:submit']">重报</el-button>
+          <el-button v-if="scope.row.approvalStatus" link type="primary" icon="History" @click="openHistoryDialog(scope.row)" v-hasPermi="['biz:approval:history']">审批历史</el-button>
           <el-button v-if="scope.row.approvalStatus === 'PENDING'" link type="primary" icon="Check" @click="openApprovalDialog(scope.row)" v-hasPermi="['biz:approval:audit']">审批</el-button>
           <el-button link type="primary" icon="Delete" @click="handleDelete(scope.row)" v-hasPermi="['biz:document:remove']">删除</el-button>
         </template>
