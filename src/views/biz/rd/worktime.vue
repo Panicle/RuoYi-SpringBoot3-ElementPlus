@@ -326,8 +326,10 @@ function handleCopyLast() {
       month: query.month
     })
   }).then(response => {
-    const msg = (response && response.msg) || "复制成功"
-    proxy.$modal.msgSuccess(msg)
+    const data = (response && response.data) || {}
+    const copied = Number(data.copiedCount) || 0
+    const skipped = Number(data.skippedCount) || 0
+    proxy.$modal.msgSuccess(`复制 ${copied} 天，跳过 ${skipped} 天`)
     loadCalendar()
   }).catch(() => {})
 }
@@ -348,7 +350,10 @@ function loadMonthly() {
   }).catch(() => { monthlyLoading.value = false })
 }
 
-watch(() => query.projectId, () => { loadMonthly() })
+watch([() => query.projectId, () => query.month], () => {
+  monthlyQuery.pageNum = 1
+  loadMonthly()
+})
 
 onMounted(() => {
   loadProjectOptions()

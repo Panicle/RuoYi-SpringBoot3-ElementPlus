@@ -49,7 +49,7 @@
           <div class="clearfix">
             <span class="card-title">分摊汇总</span>
             <div style="float: right">
-              <el-tag v-if="dashboard.status" :type="statusTagType(dashboard.status)" size="large">
+              <el-tag v-if="dashboard.status && dashboard.status !== 'NONE'" :type="statusTagType(dashboard.status)" size="large">
                 {{ statusLabel(dashboard.status) }}
               </el-tag>
               <el-tag v-if="dashboard.closed === true" type="success" size="large" style="margin-left: 6px">已闭合</el-tag>
@@ -57,36 +57,44 @@
             </div>
           </div>
         </template>
+        <el-alert
+          v-if="dashboard.status === 'NONE' && dashboard.hint"
+          type="info"
+          :title="dashboard.hint"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 12px"
+        />
         <el-row :gutter="12">
           <el-col :span="6">
             <div class="stat-card">
               <div class="stat-label">年度预算 B</div>
-              <div class="stat-value">{{ formatAmount(dashboard.budgetAmount) }}</div>
+              <div class="stat-value">{{ formatAmount(dashboard.budget) }}</div>
             </div>
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
               <div class="stat-label">Σ 分摊</div>
-              <div class="stat-value">{{ formatAmount(dashboard.allocatedTotal) }}</div>
+              <div class="stat-value">{{ formatAmount(dashboard.sumAlloc) }}</div>
             </div>
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
               <div class="stat-label">Σ 附加费</div>
-              <div class="stat-value">{{ formatAmount(dashboard.surchargeTotal) }}</div>
+              <div class="stat-value">{{ formatAmount(dashboard.sumSurcharge) }}</div>
             </div>
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
               <div class="stat-label">Σ 工资及附加费</div>
-              <div class="stat-value">{{ formatAmount(dashboard.grandTotal) }}</div>
+              <div class="stat-value">{{ formatAmount(dashboard.sumGrand) }}</div>
             </div>
           </el-col>
         </el-row>
         <el-alert
-          v-if="dashboard.allocLast != null && dashboard.allocLast < 0"
+          v-if="allocLastNegative"
           type="warning"
-          :title="`分摊超支警告：累计差额 ${formatAmount(dashboard.allocLast)} 元`"
+          title="分摊超支警告：累计差额为负，存在超支风险"
           show-icon
           :closable="false"
           style="margin-top: 12px"
@@ -185,6 +193,8 @@ const query = reactive({ projectId: undefined, month: undefined })
 
 const dashboard = ref({})
 const dashboardLoading = ref(false)
+// calc 返回的负尾差标志（dashboard 不带该字段，单独维护以驱动黄条）
+const allocLastNegative = ref(false)
 
 const allocList = ref([])
 const listLoading = ref(false)
@@ -198,6 +208,7 @@ function loadProjectOptions() {
 
 // ===== 加载 =====
 function onQueryChange() {
+  allocLastNegative.value = false
   if (!query.projectId || !query.month) {
     dashboard.value = {}
     allocList.value = []
@@ -234,9 +245,28 @@ function handleCalc() {
   ).then(() => {
     return calcAllocation({ projectId: query.projectId, month: query.month })
   }).then(response => {
-    const msg = (response && response.msg) || "计算完成"
+    const data = (response && response.data) || {}
+    const summary = data.summary || null
+    const msg = (response && response.msg) || (summary ? "计算完成" : "无有效工时")
     proxy.$modal.msgSuccess(msg)
-    onQueryChange()
+    if (summary) {
+      // 有批次：直接用返回数据刷新，省一次 /list + /dashboard 调用
+      dashboard.value = {
+        ...dashboard.value,
+        budget: summary.budget,
+        sumAlloc: summary.sumAlloc,
+        sumSurcharge: summary.sumSurcharge,
+        sumGrand: summary.sumGrand,
+        memberCount: summary.memberCount,
+        status: data.rows && data.rows.length > 0 ? "DRAFT" : dashboard.value.status
+      }
+      allocList.value = data.rows || []
+      allocLastNegative.value = data.allocLastNegative === true
+    } else {
+      // 无有效工时：重新拉取 dashboard/list 获取权威 hint 展示
+      loadDashboard()
+      loadList()
+    }
   }).catch(() => {})
 }
 
