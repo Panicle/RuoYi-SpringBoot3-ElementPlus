@@ -337,11 +337,10 @@
           <el-tree-select
             v-model="addUnitForm.unitIds"
             :data="unitTreeOptions"
-            :props="{ value: 'id', label: 'label', children: 'children' }"
-            value-key="id"
             placeholder="请选择合作单位"
             check-strictly
             multiple
+            show-checkbox
             style="width: 100%"
           />
         </el-form-item>
@@ -470,6 +469,20 @@ const unitList = ref([])
 const addUnitOpen = ref(false)
 const unitTreeOptions = ref([])
 const addUnitForm = ref({})
+
+/**
+ * 后端 /biz/unit/treeselect 返回标准 TreeSelect（id/label/children）。
+ * el-tree-select 在 multiple 模式下，tag 回显依赖默认 value 字段反查 label（element-plus issue #18236），
+ * 前端统一映射为 { value, label, children } 默认结构，避免自定义 props.value 的版本回显缺陷。
+ */
+function mapUnitTreeOptions(nodes) {
+  return (nodes || []).map(node => ({
+    value: node.id,
+    label: node.label,
+    disabled: !!node.disabled,
+    children: node.children && node.children.length ? mapUnitTreeOptions(node.children) : undefined
+  }))
+}
 const addUnitRules = {
   unitIds: [{ required: true, type: 'array', message: "请选择合作单位", trigger: "change" }],
   cooperationType: [{ required: true, message: "请选择合作方式", trigger: "change" }]
@@ -654,7 +667,7 @@ function loadUnits() {
 function openAddUnit() {
   addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: undefined }
   treeUnit().then(response => {
-    unitTreeOptions.value = response.data || []
+    unitTreeOptions.value = mapUnitTreeOptions(response.data || [])
   })
   addUnitOpen.value = true
 }
