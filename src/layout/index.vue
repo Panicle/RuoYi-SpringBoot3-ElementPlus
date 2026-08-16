@@ -8,6 +8,7 @@
         <tags-view v-if="needTagsView" />
       </div>
       <app-main />
+      <ChatWidget />
       <settings ref="settingRef" />
     </div>
   </div>
@@ -19,6 +20,7 @@ import Sidebar from './components/Sidebar/index.vue'
 import { AppMain, Navbar, Settings, TagsView } from './components'
 import useAppStore from '@/store/modules/app'
 import useSettingsStore from '@/store/modules/settings'
+import ChatWidget from '@/components/ChatWidget/index.vue'
 
 const settingsStore = useSettingsStore()
 const theme = computed(() => settingsStore.theme)
