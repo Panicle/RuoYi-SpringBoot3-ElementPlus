@@ -146,8 +146,6 @@
             <el-tree-select
               v-model="form.partyUnitId"
               :data="unitTreeOptions"
-              :props="{ value: 'id', label: 'label', children: 'children' }"
-              value-key="id"
               placeholder="请选择合作单位"
               clearable
               check-strictly
@@ -300,10 +298,24 @@ function loadProjectOptions() {
   })
 }
 
+/**
+ * 后端 /biz/unit/treeselect 返回标准 TreeSelect（id/label/children）。
+ * el-tree-select 回显依赖默认 value 字段反查 label（element-plus issue #18236），
+ * 统一映射为 { value, label, children } 默认结构，避免自定义 props.value 的版本回显缺陷。
+ */
+function mapUnitTreeOptions(nodes) {
+  return (nodes || []).map(node => ({
+    value: node.id,
+    label: node.label,
+    disabled: !!node.disabled,
+    children: node.children && node.children.length ? mapUnitTreeOptions(node.children) : undefined
+  }))
+}
+
 /** 加载合作单位树 */
 function loadUnitTree() {
   treeUnit().then(response => {
-    unitTreeOptions.value = response.data || []
+    unitTreeOptions.value = mapUnitTreeOptions(response.data || [])
   })
 }
 

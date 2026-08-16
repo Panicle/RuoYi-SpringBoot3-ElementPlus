@@ -13,6 +13,37 @@
       <template v-if="appStore.device !== 'mobile'">
         <!-- <header-search id="header-search" class="right-menu-item" /> -->
 
+        <el-popover
+          placement="bottom"
+          :width="320"
+          trigger="click"
+          @show="loadRecentNotify"
+        >
+          <template #reference>
+            <div class="right-menu-item hover-effect notify-bell">
+              <el-badge :value="notifyStore.unreadCount" :hidden="notifyStore.unreadCount <= 0" :max="99" type="danger">
+                <el-icon :size="18"><Bell /></el-icon>
+              </el-badge>
+            </div>
+          </template>
+          <div class="notify-panel">
+            <div class="notify-panel-header">
+              <span class="notify-panel-title">我的通知</span>
+              <el-link type="primary" :underline="false" @click="goNotifyPage">查看全部</el-link>
+            </div>
+            <div v-loading="notifyLoading" class="notify-panel-body">
+              <div v-if="!notifyLoading && recentNotify.length === 0" class="notify-empty">暂无通知</div>
+              <div v-for="item in recentNotify" :key="item.notifyId" class="notify-item" @click="goNotifyPage">
+                <el-badge v-if="item.status === 'UNREAD'" is-dot type="danger" class="notify-dot" />
+                <div class="notify-item-main">
+                  <div class="notify-item-title">{{ item.alertTitle || "未命名预警" }}</div>
+                  <div class="notify-item-time">{{ item.createTime }}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-popover>
+
         <screenfull id="screenfull" class="right-menu-item hover-effect" />
 
         <!-- <el-tooltip content="主题模式" effect="dark" placement="bottom">
@@ -74,10 +105,18 @@ import RuoYiDoc from "@/components/RuoYi/Doc";
 import useAppStore from "@/store/modules/app";
 import useUserStore from "@/store/modules/user";
 import useSettingsStore from "@/store/modules/settings";
+import { listMyNotify } from "@/api/biz/alert"
+import useNotifyStore from "@/store/modules/notify"
+import { useRouter } from "vue-router"
 
 const appStore = useAppStore();
 const userStore = useUserStore();
 const settingsStore = useSettingsStore();
+
+const notifyStore = useNotifyStore()
+const router = useRouter()
+const recentNotify = ref([])
+const notifyLoading = ref(false)
 
 function toggleSideBar() {
   appStore.toggleSideBar();
@@ -118,6 +157,24 @@ function setLayout() {
 function toggleTheme() {
   settingsStore.toggleTheme();
 }
+
+/** 下拉打开时拉取我的通知前 N 条 */
+function loadRecentNotify() {
+  notifyLoading.value = true
+  listMyNotify({ pageNum: 1, pageSize: 10 }).then(response => {
+    recentNotify.value = response.rows || []
+  }).catch(() => { recentNotify.value = [] }).finally(() => { notifyLoading.value = false })
+}
+
+/** 查看全部 → 通知页 */
+function goNotifyPage() {
+  router.push("/biz/alert/notify")
+}
+
+/** 挂载时拉一次未读数（不再恒 0；WS 推送时由 ChatWidget 刷新 store） */
+onMounted(() => {
+  notifyStore.refreshUnreadCount()
+})
 </script>
 
 <style lang="scss" scoped>

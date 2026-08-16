@@ -57,6 +57,12 @@ export default defineConfig(({ mode, command }) => {
          '^/v3/api-docs/(.*)': {
           target: baseUrl,
           changeOrigin: true,
+        },
+        // 对话精灵 / 预警推送 WebSocket /ws/pet 转发到后端（含 ws 握手升级）
+        '/ws': {
+          target: baseUrl,
+          changeOrigin: true,
+          ws: true
         }
       }
     },

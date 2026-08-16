@@ -3,7 +3,7 @@
     <!-- 悬浮入口按钮 -->
     <transition name="chat-fade">
       <div v-if="!open" class="chat-toggle" @click="handleOpen">
-        <el-badge :value="unreadCount" :hidden="unreadCount <= 0" :max="99" type="danger">
+        <el-badge :value="notifyStore.unreadCount" :hidden="notifyStore.unreadCount <= 0" :max="99" type="danger">
           <el-icon :size="26"><ChatDotRound /></el-icon>
         </el-badge>
       </div>
@@ -48,28 +48,28 @@
 </template>
 
 <script setup name="ChatWidget">
+import { ElNotification } from "element-plus"
 import { askChat, getChatSession } from "@/api/biz/chat"
-import { getUnreadCount } from "@/api/biz/alert"
 import { getToken } from "@/utils/auth"
+import useNotifyStore from "@/store/modules/notify"
 import ConfirmCard from "./ConfirmCard.vue"
 
-const { proxy } = getCurrentInstance()
+const notifyStore = useNotifyStore()
 
 const open = ref(false)
 const sending = ref(false)
 const input = ref("")
 const messages = ref([])
 const configured = ref(true)
-const unreadCount = ref(0)
 const currentConfirmCard = ref(null)
 const msgListRef = ref()
 let wsRef = null
 
-/** 打开面板：加载会话历史 + 未读计数 + 建立预警推送连接 */
+/** 打开面板：加载会话历史 + 刷新未读计数 + 建立预警推送连接 */
 function handleOpen() {
   open.value = true
   loadSession()
-  refreshUnreadCount()
+  notifyStore.refreshUnreadCount()
   connectWs()
 }
 
@@ -114,14 +114,11 @@ function handleConfirmCancel() {
   currentConfirmCard.value = null
 }
 
-/** 刷新未读计数 */
-function refreshUnreadCount() {
-  getUnreadCount().then(response => {
-    unreadCount.value = response.data || 0
-  }).catch(() => {})
-}
-
-/** WebSocket /ws/pet 预警推送（可选：连接失败静默降级不阻塞；payload 为 JSON 文本，收到即重查未读计数） */
+/**
+ * WebSocket /ws/pet 预警推送（挂载即连接，供通知铃铛实时刷新 + 本处弹窗提示）。
+ * 连接失败静默降级不阻塞；payload 为 JSON 文本 {alertId,title,content,alertType,alertLevel}，
+ * 收到即刷新全局未读计数，并用 ElNotification 弹窗（title=预警标题，message=内容）。
+ */
 function connectWs() {
   if (!window.WebSocket || wsRef) return
   const token = getToken()
@@ -130,9 +127,21 @@ function connectWs() {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:"
     const ws = new WebSocket(protocol + "//" + location.host + "/ws/pet?token=" + encodeURIComponent(token))
     wsRef = ws
-    ws.onmessage = () => {
-      refreshUnreadCount()
-      proxy.$modal.notifyWarning('收到新的预警通知，请前往"我的通知"查看')
+    ws.onmessage = (event) => {
+      notifyStore.refreshUnreadCount()
+      let title = ""
+      let message = ""
+      try {
+        const data = JSON.parse(event.data)
+        title = data && data.title ? data.title : ""
+        message = data && data.content ? data.content : ""
+      } catch (e) { /* 非 JSON 推送：仅刷新未读计数 */ }
+      ElNotification({
+        title: title || "新的预警通知",
+        message: message || '请前往"我的通知"查看',
+        type: "warning",
+        duration: 4500
+      })
     }
     ws.onclose = () => { wsRef = null }
     ws.onerror = () => { wsRef = null }
@@ -149,6 +158,10 @@ function scrollToBottom() {
     }
   })
 }
+
+onMounted(() => {
+  connectWs()
+})
 
 onUnmounted(() => {
   if (wsRef) {
