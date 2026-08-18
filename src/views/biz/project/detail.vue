@@ -168,7 +168,9 @@
           </el-row>
 
           <el-table v-loading="unitLoading" :data="unitList">
-            <el-table-column label="单位名称" align="center" prop="unitName" :show-overflow-tooltip="true" />
+            <el-table-column label="单位名称" align="center" :show-overflow-tooltip="true">
+              <template #default="scope">{{ unitDisplayName(scope.row) }}</template>
+            </el-table-column>
             <el-table-column label="单位类别" align="center" width="110">
               <template #default="scope">
                 <dict-tag :options="external_unit_type" :value="scope.row.externalUnitType" />
@@ -177,6 +179,11 @@
             <el-table-column label="合作方式" align="center" width="110">
               <template #default="scope">
                 <dict-tag :options="cooperation_type" :value="scope.row.cooperationType" />
+              </template>
+            </el-table-column>
+            <el-table-column label="经费金额（元）" align="right" width="140">
+              <template #default="scope">
+                {{ scope.row.allocatedAmount == null ? '-' : Number(scope.row.allocatedAmount).toLocaleString() }}
               </template>
             </el-table-column>
             <el-table-column label="操作" align="center" width="120" class-name="small-padding fixed-width">
@@ -267,7 +274,7 @@
     </el-dialog>
 
     <!-- 修改课题对话框 -->
-    <el-dialog title="修改课题" v-model="editOpen" width="720px" append-to-body :close-on-click-modal="false">
+    <el-dialog title="修改课题" v-model="editOpen" width="860px" append-to-body :close-on-click-modal="false">
       <el-form ref="editRef" :model="editForm" :rules="editRules" label-width="100px" v-loading="editLoading">
         <el-form-item label="课题编号">
           <el-input v-model="editForm.projectNo" disabled />
@@ -290,27 +297,11 @@
             <el-option v-for="dict in specialty" :key="dict.value" :label="dict.label" :value="dict.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="预算总额">
-          <span class="budget-total-value">{{ formatBudget(editBudgetSplitTotal) }}</span>
+        <el-form-item label="经费预算">
+          <unit-budget-editor ref="editUnitBudgetRef" :host-unit-id="editForm.hostUnitId" />
         </el-form-item>
-        <el-form-item label="预算细分">
-          <div class="budget-split-box">
-            <div v-for="group in BUDGET_GROUPS" :key="group.title" class="budget-group">
-              <div class="budget-group-title">{{ group.title }}</div>
-              <div class="budget-item-grid">
-                <div v-for="category in group.categories" :key="category" class="budget-item">
-                  <span class="budget-label">{{ budgetCategoryMap[category] || category }}</span>
-                  <el-input-number
-                    v-model="editBudgetAmountMap[category]"
-                    :min="0"
-                    :precision="2"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+        <el-form-item label="预算合计">
+          <span class="budget-total-value">{{ formatBudget(editUnitBudgetTotal) }}</span>
         </el-form-item>
         <el-form-item label="开始日期" prop="startDate">
           <el-date-picker v-model="editForm.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择开始日期" style="width: 100%" />
@@ -349,6 +340,9 @@
             <el-option v-for="dict in cooperation_type" :key="dict.value" :label="dict.label" :value="dict.value" />
           </el-select>
         </el-form-item>
+        <el-form-item label="经费金额" prop="allocatedAmount">
+          <el-input-number v-model="addUnitForm.allocatedAmount" :min="0" :precision="2" controls-position="right" style="width: 100%" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <div class="dialog-footer">
@@ -363,8 +357,11 @@
 <script setup name="ProjectDetail">
 import { getProject, listProjectMember, addProjectMember, delProjectMember, changeHost, updateProject, listProjectUnit, addProjectUnitBatch, delProjectUnit } from "@/api/biz/project"
 import { treeUnit } from "@/api/biz/unit"
-import { listUser } from "@/api/system/user"
-import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
+import { listUserOptions } from "@/api/biz/userProfile"
+import { deptTreeSelect } from "@/api/system/user"
+import { BUDGET_GROUPS, buildBudgetCategoryMap } from "./budgetSplit"
+import UnitBudgetEditor from "./unitBudgetEditor.vue"
+import { checkPermi } from "@/utils/permission"
 
 const route = useRoute()
 const router = useRouter()
@@ -394,30 +391,12 @@ const budgetSplitTotal = computed(() => {
   return total
 })
 
-// 预算细分编辑（修改弹窗，金额按科目映射）
-const editBudgetAmountMap = reactive({})
-const editBudgetSplitTotal = computed(() => {
-  let total = 0
-  BUDGET_CATEGORIES.forEach(c => {
-    const v = editBudgetAmountMap[c]
-    if (typeof v === "number" && !Number.isNaN(v)) total += v
-  })
-  return total
+// 按单位预算编辑（修改弹窗，复用 unitBudgetEditor）
+const editUnitBudgetRef = ref(null)
+const editUnitBudgetTotal = computed(() => {
+  const inst = editUnitBudgetRef.value
+  return inst && inst.budgetTotal ? inst.budgetTotal.value : 0
 })
-function initEditBudgetAmountMap(splits) {
-  BUDGET_CATEGORIES.forEach(c => { editBudgetAmountMap[c] = undefined })
-  ;(splits || []).forEach(s => {
-    if (s && s.category && BUDGET_CATEGORIES.includes(s.category)) {
-      editBudgetAmountMap[s.category] = s.budgetAmount == null ? undefined : Number(s.budgetAmount)
-    }
-  })
-}
-function buildEditBudgetSplitList() {
-  return BUDGET_CATEGORIES.map(category => ({
-    category,
-    budgetAmount: editBudgetAmountMap[category] == null ? 0 : editBudgetAmountMap[category]
-  }))
-}
 
 const projectId = computed(() => Number(route.params.projectId))
 const activeTab = ref("info")
@@ -492,6 +471,7 @@ onMounted(() => {
   const tab = route.query && route.query.activeTab
   if (tab === "member" || tab === "info" || tab === "unit") activeTab.value = tab
   loadDetail()
+  loadDeptTree()
 })
 
 watch(activeTab, val => {
@@ -530,9 +510,18 @@ function goEdit() {
   editLoading.value = true
   getProject(projectId.value).then(response => {
     editForm.value = { ...response.data }
-    initEditBudgetAmountMap(response.data.budgetSplitList)
     editLoading.value = false
     editOpen.value = true
+    nextTick(() => {
+      editUnitBudgetRef.value?.reset(editForm.value.hostUnitId)
+      listProjectUnit({ projectId: projectId.value }).then(res => {
+        editUnitBudgetRef.value?.load({
+          units: res.data || [],
+          unitBudgets: response.data.unitBudgetList,
+          hostUnitId: response.data.hostUnitId
+        })
+      }).catch(() => {})
+    })
   }).catch(() => { editLoading.value = false })
 }
 
@@ -540,7 +529,7 @@ function submitEditForm() {
   proxy.$refs["editRef"].validate(valid => {
     if (!valid) return
     editSubmitting.value = true
-    // 预算总额由后端按细分 Σ 计算，前端不传
+    const unitBudgetList = editUnitBudgetRef.value ? editUnitBudgetRef.value.buildUnitBudgetList() : []
     const payload = {
       projectId: editForm.value.projectId,
       projectName: editForm.value.projectName,
@@ -551,14 +540,37 @@ function submitEditForm() {
       endDate: editForm.value.endDate,
       deptId: editForm.value.deptId,
       remark: editForm.value.remark,
-      budgetSplitList: buildEditBudgetSplitList()
+      unitBudgetList
     }
-    updateProject(payload).then(() => {
-      proxy.$modal.msgSuccess("修改成功")
-      editOpen.value = false
-      loadDetail()
-    }).finally(() => { editSubmitting.value = false })
+    updateProject(payload)
+      .then(() => reconcileEditUnits(editForm.value.projectId))
+      .then(() => {
+        proxy.$modal.msgSuccess("修改成功")
+        editOpen.value = false
+        loadDetail()
+      })
+      .finally(() => { editSubmitting.value = false })
   })
+}
+
+/** 参与/协作单位关联与后端 project_unit 差异同步（需 biz:project:unit 权限） */
+function reconcileEditUnits(projectId) {
+  if (!projectId) return Promise.resolve()
+  if (!checkPermi(["biz:project:unit"])) return Promise.resolve()
+  const inst = editUnitBudgetRef.value
+  const changes = inst ? inst.getAssociationChanges() : { toAdd: [], toRemoveIds: [] }
+  const tasks = []
+  ;(changes.toAdd || []).forEach(item => {
+    tasks.push(addProjectUnitBatch({
+      projectId,
+      unitIds: [item.unitId],
+      cooperationType: item.cooperationType
+    }))
+  })
+  if (changes.toRemoveIds && changes.toRemoveIds.length) {
+    tasks.push(delProjectUnit(changes.toRemoveIds.join(",")))
+  }
+  return Promise.all(tasks)
 }
 
 function openAddMember() {
@@ -571,10 +583,15 @@ function openAddMember() {
 
 function loadAllActiveUsers() {
   userSearchLoading.value = true
-  listUser({ pageNum: 1, pageSize: 50, status: "0", userName: addMemberKeyword.value || undefined, nickName: addMemberKeyword.value || undefined }).then(response => {
+  listUserOptions().then(response => {
     // 过滤掉当前已是成员的用户
     const existingIds = new Set(memberList.value.map(m => m.userId))
-    userSearchList.value = (response.rows || []).filter(u => !existingIds.has(u.userId))
+    const kw = (addMemberKeyword.value || "").trim()
+    let rows = response.data || []
+    if (kw) {
+      rows = rows.filter(u => (u.nickName || "").includes(kw) || (u.userName || "").includes(kw))
+    }
+    userSearchList.value = rows.filter(u => !existingIds.has(u.userId))
     userSearchLoading.value = false
   })
 }
@@ -656,6 +673,26 @@ function formatBudget(val) {
 
 // ===== 合作单位 tab =====
 
+// 单位 tab：参与/主持单位展示部门名（sys_dept），协作单位展示合作单位名
+const deptNameMap = ref({})
+function loadDeptTree() {
+  deptTreeSelect().then(response => {
+    const map = {}
+    const walk = (nodes) => {
+      ;(nodes || []).forEach(n => {
+        if (n.id != null) map[Number(n.id)] = n.label
+        walk(n.children)
+      })
+    }
+    walk(response.data || [])
+    deptNameMap.value = map
+  })
+}
+function unitDisplayName(row) {
+  if (row.cooperationType === "COLLABORATE") return row.unitName
+  return deptNameMap.value[row.unitId] || row.unitName || row.unitId
+}
+
 function loadUnits() {
   unitLoading.value = true
   listProjectUnit({ projectId: projectId.value }).then(response => {
@@ -665,7 +702,7 @@ function loadUnits() {
 }
 
 function openAddUnit() {
-  addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: undefined }
+  addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: undefined, allocatedAmount: undefined }
   treeUnit().then(response => {
     unitTreeOptions.value = mapUnitTreeOptions(response.data || [])
   })
@@ -678,7 +715,8 @@ function submitAddUnit() {
     addProjectUnitBatch({
       projectId: projectId.value,
       unitIds: addUnitForm.value.unitIds,
-      cooperationType: addUnitForm.value.cooperationType
+      cooperationType: addUnitForm.value.cooperationType,
+      allocatedAmount: addUnitForm.value.allocatedAmount
     }).then(res => {
       proxy.$modal.msgSuccess(res.msg || "添加成功")
       addUnitOpen.value = false

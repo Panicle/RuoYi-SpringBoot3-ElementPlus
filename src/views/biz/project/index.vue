@@ -193,7 +193,7 @@
     />
 
     <!-- 新增 / 修改课题对话框 -->
-    <el-dialog :title="title" v-model="open" width="720px" append-to-body :close-on-click-modal="false">
+    <el-dialog :title="title" v-model="open" width="860px" append-to-body :close-on-click-modal="false">
       <el-form ref="projectRef" :model="form" :rules="rules" label-width="100px" v-loading="formLoading">
         <el-form-item label="课题编号" prop="projectNo">
           <el-input v-model="form.projectNo" :disabled="!!form.projectId" placeholder="请输入课题编号" maxlength="50" />
@@ -231,50 +231,45 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="组长" prop="leaderId">
-          <el-input v-model="form.leaderName" placeholder="点击右侧按钮选择" readonly>
-            <template #append>
-              <el-button @click="openLeaderPicker">选择</el-button>
-            </template>
-          </el-input>
-        </el-form-item>
-        <el-form-item label="主持单位" prop="selfHosted">
-          <el-radio-group v-model="form.selfHosted" :disabled="!!form.projectId">
+        <el-form-item label="主持标识" prop="selfHosted">
+          <el-radio-group v-model="form.selfHosted" :disabled="!!form.projectId" @change="onSelfHostedChange">
             <el-radio value="1">本单位主持</el-radio>
             <el-radio value="0">外单位主持</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="form.selfHosted === '0'" label="主持单位名称" prop="hostUnitId">
-          <el-select v-model="form.hostUnitId" placeholder="请选择主持单位" filterable clearable style="width: 100%">
-            <el-option v-for="u in unitOptions" :key="u.unitId" :label="u.unitName" :value="u.unitId" />
-          </el-select>
+        <el-form-item label="主持单位" prop="hostUnitId">
+          <el-tree-select
+            v-model="form.hostUnitId"
+            :data="companyTreeOptions"
+            :props="{ value: 'id', label: 'label', children: 'children' }"
+            value-key="id"
+            placeholder="请选择主持单位（二级公司）"
+            check-strictly
+            :disabled="!!form.projectId"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="组长" prop="leaderId">
+          <div v-if="leaderEditable" class="leader-cascade">
+            <el-select v-model="leaderDeptId" placeholder="选择部门" clearable style="width: 46%">
+              <el-option v-for="d in leaderDeptOptions" :key="d.id" :label="d.label" :value="d.id" />
+            </el-select>
+            <el-select v-model="form.leaderId" placeholder="选择人员" clearable filterable style="width: 46%; margin-left: 8px" @change="onLeaderPersonChange">
+              <el-option v-for="p in leaderPersonOptions" :key="p.userId" :label="p.nickName || p.userName" :value="p.userId" />
+            </el-select>
+          </div>
+          <el-input v-else v-model="form.leaderName" disabled placeholder="本单位主持默认为当前用户" readonly />
         </el-form-item>
         <el-form-item label="研究领域" prop="fieldList">
           <el-select v-model="form.fieldList" multiple filterable placeholder="请选择研究领域（可多选）" clearable style="width: 100%">
             <el-option v-for="d in research_direction" :key="d.value" :label="d.label" :value="d.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="预算总额">
-          <span class="budget-total-value">{{ formatBudget(budgetSplitTotal) }}</span>
+        <el-form-item label="经费预算">
+          <unit-budget-editor ref="unitBudgetEditorRef" :host-unit-id="form.hostUnitId" />
         </el-form-item>
-        <el-form-item label="预算细分">
-          <div class="budget-split-box">
-            <div v-for="group in BUDGET_GROUPS" :key="group.title" class="budget-group">
-              <div class="budget-group-title">{{ group.title }}</div>
-              <div class="budget-item-grid">
-                <div v-for="category in group.categories" :key="category" class="budget-item">
-                  <span class="budget-label">{{ budgetCategoryMap[category] || category }}</span>
-                  <el-input-number
-                    v-model="budgetAmountMap[category]"
-                    :min="0"
-                    :precision="2"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+        <el-form-item label="预算合计">
+          <span class="budget-total-value">{{ formatBudget(unitBudgetTotal) }}</span>
         </el-form-item>
         <el-form-item label="开始日期" prop="startDate">
           <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" placeholder="请选择开始日期" style="width: 100%" />
@@ -330,51 +325,22 @@
         </div>
       </template>
     </el-dialog>
-
-    <!-- 组长选择器（单选） -->
-    <user-picker-dialog ref="leaderPickerRef" @ok="onLeaderPicked" />
   </div>
 </template>
 
 <script setup name="Project">
-import { listProject, addProject, delProject, getProject, updateProject, changeStatus, archive } from "@/api/biz/project"
-import { listUnit } from "@/api/biz/unit"
+import { listProject, addProject, delProject, getProject, updateProject, changeStatus, archive, listProjectUnit, addProjectUnitBatch, delProjectUnit } from "@/api/biz/project"
+import { listUserOptions } from "@/api/biz/userProfile"
 import { deptTreeSelect } from "@/api/system/user"
-import UserPickerDialog from "./userPickerDialog.vue"
-import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
+import UnitBudgetEditor from "./unitBudgetEditor.vue"
+import useUserStore from "@/store/modules/user"
+import { checkPermi, checkRole } from "@/utils/permission"
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
-const { project_type, project_status, project_category, specialty, budget_category, research_direction } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "budget_category", "research_direction")
-
-// 预算细分：科目名走字典渲染，金额按科目映射（新增/修改用）
-const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
-const budgetAmountMap = reactive({})
-
-const budgetSplitTotal = computed(() => {
-  let total = 0
-  BUDGET_CATEGORIES.forEach(c => {
-    const v = budgetAmountMap[c]
-    if (typeof v === "number" && !Number.isNaN(v)) total += v
-  })
-  return total
-})
-
-function initBudgetAmountMap(splits) {
-  BUDGET_CATEGORIES.forEach(c => { budgetAmountMap[c] = undefined })
-  ;(splits || []).forEach(s => {
-    if (s && s.category && BUDGET_CATEGORIES.includes(s.category)) {
-      budgetAmountMap[s.category] = s.budgetAmount == null ? undefined : Number(s.budgetAmount)
-    }
-  })
-}
-
-function buildBudgetSplitList() {
-  return BUDGET_CATEGORIES.map(category => ({
-    category,
-    budgetAmount: budgetAmountMap[category] == null ? 0 : budgetAmountMap[category]
-  }))
-}
+const userStore = useUserStore()
+const currentUserId = computed(() => Number(userStore.id) || undefined)
+const { project_type, project_status, project_category, specialty, research_direction } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "research_direction")
 
 const projectList = ref([])
 const open = ref(false)
@@ -390,12 +356,82 @@ const total = ref(0)
 const title = ref("")
 const deptOptions = ref([])
 const enabledDeptOptions = ref([])
-const unitOptions = ref([])
 const dateRange = ref([])
 const currentRow = ref(null)
 const targetStatus = ref(undefined)
 const nextStatusOptions = ref([])
-const leaderPickerRef = ref(null)
+
+// ===== 按单位预算编辑器 =====
+const unitBudgetEditorRef = ref(null)
+const unitBudgetTotal = computed(() => {
+  const inst = unitBudgetEditorRef.value
+  return inst && inst.budgetTotal ? inst.budgetTotal.value : 0
+})
+
+// ===== 二级公司（主持单位选项） =====
+const companyOptions = computed(() => {
+  const root = deptOptions.value && deptOptions.value[0]
+  return ((root && root.children) || [])
+    .filter(n => n.status === "0" || n.status === 0 || n.status == null)
+    .map(n => ({ id: Number(n.id), label: n.label }))
+})
+const companyTreeOptions = computed(() => companyOptions.value.map(c => ({ id: c.id, label: c.label, children: [] })))
+
+function defaultHostCompanyId() {
+  if (!companyOptions.value.length) return undefined
+  const ky = companyOptions.value.find(c => c.label === "科研所")
+  return ky ? ky.id : companyOptions.value[0].id
+}
+
+// ===== 组长级联（部门 → 人员） =====
+const allUserOptions = ref([])
+const leaderDeptId = ref(undefined)
+const leaderUnlocked = computed(() => checkRole(["admin", "science_admin"]) || form.value.selfHosted === "0")
+// 修改态后端强制 leader_id = 库原值，组长不可改
+const leaderEditable = computed(() => !form.value.projectId && leaderUnlocked.value)
+const leaderDeptOptions = computed(() => {
+  if (form.value.hostUnitId == null) return []
+  const node = findDeptNode(enabledDeptOptions.value, form.value.hostUnitId)
+  return (node && node.children) || []
+})
+const leaderPersonOptions = computed(() => {
+  let rows = allUserOptions.value
+  if (leaderDeptId.value != null) {
+    rows = rows.filter(u => Number(u.deptId) === Number(leaderDeptId.value))
+  }
+  return rows
+})
+
+function loadAllUserOptions() {
+  listUserOptions().then(response => {
+    allUserOptions.value = response.data || []
+  })
+}
+
+function findDeptNode(nodes, id) {
+  for (const n of nodes || []) {
+    if (Number(n.id) === Number(id)) return n
+    const found = findDeptNode(n.children, id)
+    if (found) return found
+  }
+  return null
+}
+
+/** 当前用户部门属于主持单位二级公司下的部门时才预选，否则留空让用户选 */
+function syncLeaderCascade() {
+  const me = allUserOptions.value.find(u => Number(u.userId) === Number(userStore.id))
+  const dept = me && me.deptId != null ? Number(me.deptId) : undefined
+  if (dept != null && leaderDeptOptions.value.some(d => Number(d.id) === dept)) {
+    leaderDeptId.value = dept
+  } else {
+    leaderDeptId.value = undefined
+  }
+}
+
+function onLeaderPersonChange(val) {
+  const p = leaderPersonOptions.value.find(x => Number(x.userId) === Number(val))
+  form.value.leaderName = p ? (p.nickName || p.userName) : undefined
+}
 
 const data = reactive({
   form: {},
@@ -419,6 +455,7 @@ const data = reactive({
     projectType: [{ required: true, message: "课题级别不能为空", trigger: "change" }],
     projectCategory: [{ required: true, message: "项目类别不能为空", trigger: "change" }],
     specialty: [{ required: true, message: "专业分类不能为空", trigger: "change" }],
+    hostUnitId: [{ required: true, message: "请选择主持单位", trigger: "change" }],
     leaderId: [{ required: true, message: "组长不能为空", trigger: "change" }]
   }
 })
@@ -438,13 +475,6 @@ function getDeptTree() {
   deptTreeSelect().then(response => {
     deptOptions.value = response.data
     enabledDeptOptions.value = filterDisabledDept(JSON.parse(JSON.stringify(response.data)))
-  })
-}
-
-/** 查询合作单位下拉（外单位主持选择） */
-function loadUnitOptions() {
-  listUnit({ pageNum: 1, pageSize: 1000 }).then(response => {
-    unitOptions.value = response.rows || []
   })
 }
 
@@ -480,17 +510,17 @@ function reset() {
     projectType: undefined,
     projectCategory: undefined,
     specialty: undefined,
-    leaderId: undefined,
-    leaderName: undefined,
+    leaderId: currentUserId.value,
+    leaderName: userStore.name,
     selfHosted: '1',
-    hostUnitId: undefined,
+    hostUnitId: defaultHostCompanyId(),
     fieldList: [],
     startDate: undefined,
     endDate: undefined,
     deptId: undefined,
     remark: undefined
   }
-  initBudgetAmountMap()
+  leaderDeptId.value = undefined
   proxy.resetForm("projectRef")
 }
 
@@ -520,6 +550,10 @@ function handleAdd() {
   reset()
   open.value = true
   title.value = "新增课题"
+  nextTick(() => {
+    unitBudgetEditorRef.value?.reset(form.value.hostUnitId)
+    syncLeaderCascade()
+  })
 }
 
 /** 修改 */
@@ -533,10 +567,19 @@ function handleUpdate(row) {
       leaderId: response.data.leaderId,
       leaderName: response.data.leaderName
     }
-    initBudgetAmountMap(response.data.budgetSplitList)
     formLoading.value = false
     open.value = true
     title.value = "修改课题"
+    nextTick(() => {
+      unitBudgetEditorRef.value?.reset(form.value.hostUnitId)
+      listProjectUnit({ projectId }).then(res => {
+        unitBudgetEditorRef.value?.load({
+          units: res.data || [],
+          unitBudgets: response.data.unitBudgetList,
+          hostUnitId: response.data.hostUnitId
+        })
+      }).catch(() => {})
+    })
   }).catch(() => { formLoading.value = false })
 }
 
@@ -545,8 +588,9 @@ function submitForm() {
   proxy.$refs["projectRef"].validate(valid => {
     if (!valid) return
     submitLoading.value = true
+    const unitBudgetList = unitBudgetEditorRef.value ? unitBudgetEditorRef.value.buildUnitBudgetList() : []
     if (form.value.projectId != undefined) {
-      // 修改：剔除 projectNo / leaderId / status（后端禁用）；预算总额由后端按细分 Σ 计算
+      // 修改：剔除 projectNo / leaderId / selfHosted / hostUnitId / status（后端禁用）；预算由 unitBudgetList 驱动
       const payload = {
         projectId: form.value.projectId,
         projectName: form.value.projectName,
@@ -558,13 +602,19 @@ function submitForm() {
         endDate: form.value.endDate,
         deptId: form.value.deptId,
         remark: form.value.remark,
-        budgetSplitList: buildBudgetSplitList()
+        unitBudgetList
       }
-      updateProject(payload).then(() => {
-        proxy.$modal.msgSuccess("修改成功")
-        open.value = false
-        getList()
-      }).finally(() => { submitLoading.value = false })
+      updateProject(payload)
+        .then(() => reconcileUnits(form.value.projectId).catch(err => {
+          proxy.$modal.msgWarning("课题已保存，但关联单位处理失败：" + ((err && (err.msg || err.message)) || "请到详情页补充"))
+        }))
+        .then(() => {
+          proxy.$modal.msgSuccess("修改成功")
+          open.value = false
+          getList()
+        })
+        .catch(() => {})
+        .finally(() => { submitLoading.value = false })
     } else {
       const payload = {
         projectNo: form.value.projectNo,
@@ -574,21 +624,50 @@ function submitForm() {
         specialty: form.value.specialty,
         leaderId: form.value.leaderId,
         selfHosted: form.value.selfHosted,
-        hostUnitId: form.value.selfHosted === '0' ? form.value.hostUnitId : undefined,
+        hostUnitId: form.value.hostUnitId,
         fieldList: form.value.fieldList || [],
         startDate: form.value.startDate,
         endDate: form.value.endDate,
         deptId: form.value.deptId,
         remark: form.value.remark,
-        budgetSplitList: buildBudgetSplitList()
+        unitBudgetList
       }
-      addProject(payload).then(() => {
-        proxy.$modal.msgSuccess("新增成功")
-        open.value = false
-        getList()
-      }).finally(() => { submitLoading.value = false })
+      addProject(payload)
+        .then(res => {
+          const pid = res.data && res.data.projectId
+          return reconcileUnits(pid).catch(err => {
+            proxy.$modal.msgWarning("课题已保存，但关联单位处理失败：" + ((err && (err.msg || err.message)) || "请到详情页补充"))
+          })
+        })
+        .then(() => {
+          proxy.$modal.msgSuccess("新增成功")
+          open.value = false
+          getList()
+        })
+        .catch(() => {})
+        .finally(() => { submitLoading.value = false })
     }
   })
+}
+
+/** 参与/协作单位关联与后端 project_unit 差异同步（需 biz:project:unit 权限，无权限则仅预算落库） */
+function reconcileUnits(projectId) {
+  if (!projectId) return Promise.resolve()
+  if (!checkPermi(["biz:project:unit"])) return Promise.resolve()
+  const inst = unitBudgetEditorRef.value
+  const changes = inst ? inst.getAssociationChanges() : { toAdd: [], toRemoveIds: [] }
+  const tasks = []
+  ;(changes.toAdd || []).forEach(item => {
+    tasks.push(addProjectUnitBatch({
+      projectId,
+      unitIds: [item.unitId],
+      cooperationType: item.cooperationType
+    }))
+  })
+  if (changes.toRemoveIds && changes.toRemoveIds.length) {
+    tasks.push(delProjectUnit(changes.toRemoveIds.join(",")))
+  }
+  return Promise.all(tasks)
 }
 
 /** 删除 */
@@ -648,14 +727,23 @@ function handleArchive(row) {
   }).catch(() => {})
 }
 
-/** 打开组长选择器 */
-function openLeaderPicker() {
-  leaderPickerRef.value.show()
-}
-
-function onLeaderPicked(row) {
-  form.value.leaderId = row.userId
-  form.value.leaderName = row.nickName || row.userName
+/** 主持标识切换：本单位 → 默认科研所 + 组长当前用户；外单位 → 清空组长待选 */
+function onSelfHostedChange(val) {
+  if (val === '1') {
+    form.value.hostUnitId = defaultHostCompanyId()
+    form.value.leaderId = currentUserId.value
+    form.value.leaderName = userStore.name
+    leaderDeptId.value = undefined
+    syncLeaderCascade()
+  } else {
+    if (!form.value.hostUnitId) {
+      const first = companyOptions.value[0]
+      form.value.hostUnitId = first ? first.id : undefined
+    }
+    form.value.leaderId = undefined
+    form.value.leaderName = undefined
+    leaderDeptId.value = undefined
+  }
 }
 
 function formatBudget(val) {
@@ -664,16 +752,18 @@ function formatBudget(val) {
 }
 
 getDeptTree()
-loadUnitOptions()
+loadAllUserOptions()
 getList()
+
+// 部门树加载晚于表单打开时兜底默认主持单位（新增态）
+watch(companyOptions, (val) => {
+  if (val.length && form.value && form.value.hostUnitId == null && !form.value.projectId) {
+    form.value.hostUnitId = defaultHostCompanyId()
+  }
+})
 </script>
 
 <style scoped>
-.budget-split-box { width: 100%; }
-.budget-group { margin-bottom: 14px; }
-.budget-group-title { font-weight: 600; color: #303133; margin-bottom: 8px; }
-.budget-item-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.budget-item { display: flex; flex-direction: column; gap: 4px; }
-.budget-label { font-size: 13px; color: #606266; }
+.leader-cascade { display: flex; width: 100%; }
 .budget-total-value { font-size: 16px; color: #f56c6c; font-weight: 600; }
 </style>
