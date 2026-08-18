@@ -52,6 +52,7 @@
 
 <script setup name="UnitBudgetEditor">
 import { deptTreeSelect } from "@/api/system/user"
+import { listProjectUnit } from "@/api/biz/project"
 import { listUnit } from "@/api/biz/unit"
 import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
 
@@ -88,15 +89,12 @@ let seq = 0
 const pendingCompanyId = ref(undefined)
 const pendingUnitId = ref(undefined)
 
-/** 编辑回显时传入的 project_unit 关联行（用于计算增删差异） */
-const loadedAssociations = ref([])
-
 /** 主持单位变化 → 就地更新 host 行（清空预算防串单位）；尚无 host 行时先建行（防 reset/load 时序竞态） */
 watch(() => props.hostUnitId, (val) => {
   const host = unitList.value.find(u => u.isHost)
   if (!host) {
     if (val == null) return
-    const h = { key: "host", deptId: Number(val), unitId: Number(val), cooperationType: "LEAD", name: "", isHost: true, projectUnitId: null, budget: {} }
+    const h = { key: "host", deptId: Number(val), unitId: Number(val), cooperationType: "LEAD", name: "", isHost: true, budget: {} }
     BUDGET_CATEGORIES.forEach(c => { h.budget[c] = undefined })
     unitList.value = [h]
     return
@@ -158,7 +156,6 @@ function addParticipant() {
     cooperationType: "PARTICIPANT",
     name: c.label,
     isHost: false,
-    projectUnitId: null,
     budget
   })
   pendingCompanyId.value = undefined
@@ -179,7 +176,6 @@ function addCollaborator() {
     cooperationType: "COLLABORATE",
     name: u.unitName,
     isHost: false,
-    projectUnitId: null,
     budget: {}
   })
   pendingUnitId.value = undefined
@@ -192,7 +188,6 @@ function removeUnit(u) {
 
 /** 新增：仅主持单位 */
 function reset(hostUnitId) {
-  loadedAssociations.value = []
   const host = {
     key: "host",
     deptId: hostUnitId == null ? null : Number(hostUnitId),
@@ -200,7 +195,6 @@ function reset(hostUnitId) {
     cooperationType: "LEAD",
     name: "",
     isHost: true,
-    projectUnitId: null,
     budget: {}
   }
   BUDGET_CATEGORIES.forEach(c => { host.budget[c] = undefined })
@@ -211,7 +205,6 @@ function reset(hostUnitId) {
 
 /** 编辑回显：hostUnitId + project_unit 关联行 + project_unit_budget 行 */
 function load({ units, unitBudgets, hostUnitId }) {
-  loadedAssociations.value = units || []
   const host = {
     key: "host",
     deptId: hostUnitId == null ? null : Number(hostUnitId),
@@ -219,7 +212,6 @@ function load({ units, unitBudgets, hostUnitId }) {
     cooperationType: "LEAD",
     name: "",
     isHost: true,
-    projectUnitId: null,
     budget: unitBudgetRowsForDept(unitBudgets, hostUnitId)
   }
   const list = [host]
@@ -235,7 +227,6 @@ function load({ units, unitBudgets, hostUnitId }) {
         cooperationType: "COLLABORATE",
         name: row.unitName || "协作单位",
         isHost: false,
-        projectUnitId: row.id || null,
         budget: {}
       })
     } else {
@@ -247,7 +238,6 @@ function load({ units, unitBudgets, hostUnitId }) {
         cooperationType: row.cooperationType || "PARTICIPANT",
         name: deptNameMap.value[deptId] || row.unitName || "",
         isHost: false,
-        projectUnitId: row.id || null,
         budget: unitBudgetRowsForDept(unitBudgets, deptId)
       })
     }
@@ -255,6 +245,40 @@ function load({ units, unitBudgets, hostUnitId }) {
   unitList.value = list
   pendingCompanyId.value = undefined
   pendingUnitId.value = undefined
+}
+
+/**
+ * C3 编辑回显统一入口：接口字段以 getProject.unitList 为准；
+ * 后端未回填 unitList 时兜底——参与单位由 unitBudgetList 的 dept 集合推导，
+ * 协作单位从 /biz/project/unit/list 读取（读取端点仅需 biz:project:query，不依赖 biz:project:unit）。
+ */
+function loadFromProject(project) {
+  if (!project) return
+  const unitBudgets = project.unitBudgetList
+  const hostUnitId = project.hostUnitId
+  if (Array.isArray(project.unitList)) {
+    load({ units: project.unitList, unitBudgets, hostUnitId })
+    return
+  }
+  const hostId = hostUnitId == null ? null : Number(hostUnitId)
+  const deptSet = {}
+  ;(unitBudgets || []).forEach(b => {
+    if (b && b.deptId != null) deptSet[Number(b.deptId)] = true
+  })
+  const participantRows = Object.keys(deptSet)
+    .map(d => Number(d))
+    .filter(d => hostId == null || d !== hostId)
+    .map(d => ({ unitId: d, deptId: d, cooperationType: "PARTICIPANT" }))
+  if (!project.projectId) {
+    load({ units: participantRows, unitBudgets, hostUnitId })
+    return
+  }
+  listProjectUnit({ projectId: project.projectId }).then(res => {
+    const collabRows = (res.data || []).filter(r => r.cooperationType === "COLLABORATE")
+    load({ units: participantRows.concat(collabRows), unitBudgets, hostUnitId })
+  }).catch(() => {
+    load({ units: participantRows, unitBudgets, hostUnitId })
+  })
 }
 
 function unitBudgetRowsForDept(unitBudgets, deptId) {
@@ -285,19 +309,25 @@ function buildUnitBudgetList() {
 }
 
 /**
- * 与后端 project_unit 关联的增删差异（由具备 biz:project:unit 权限的父组件执行）：
- * - toAdd: 当前表单中无 project_unit 行 id 的非主持单位（新增）
- * - toRemoveIds: 加载时存在但当前已移除的 project_unit 行 id
+ * 提交 payload：参与/协作单位关联（不含主持单位，接口字段以 unitList 为准，随课题 add/edit 一起保存）。
+ * 参与单位 {unitId(=集团二级公司 dept_id), deptId, cooperationType}；协作单位 {unitId, cooperationType:'COLLABORATE'}。
+ * 后端 saveUnitLinks 对参与/协作统一读 unitId（参与单位 unit_id=dept_id，dept_id 冗余携带）。
  */
-function getAssociationChanges() {
-  const currentNonHostIds = new Set(unitList.value.filter(u => !u.isHost).map(u => Number(u.unitId)))
-  const toAdd = unitList.value
-    .filter(u => !u.isHost && !u.projectUnitId)
-    .map(u => ({ unitId: Number(u.unitId), cooperationType: u.cooperationType }))
-  const toRemoveIds = (loadedAssociations.value || [])
-    .filter(a => !currentNonHostIds.has(Number(a.unitId)))
-    .map(a => a.id)
-  return { toAdd, toRemoveIds }
+function buildUnitList() {
+  const list = []
+  unitList.value.forEach(u => {
+    if (u.isHost) return
+    if (u.cooperationType === "COLLABORATE") {
+      list.push({ unitId: Number(u.unitId), cooperationType: "COLLABORATE" })
+    } else {
+      list.push({
+        unitId: Number(u.unitId),
+        deptId: Number(u.deptId),
+        cooperationType: u.cooperationType || "PARTICIPANT"
+      })
+    }
+  })
+  return list
 }
 
 function formatBudget(val) {
@@ -331,7 +361,7 @@ function loadTree() {
 
 loadTree()
 
-defineExpose({ budgetTotal, reset, load, buildUnitBudgetList, getAssociationChanges, companyOptions, unitList })
+defineExpose({ budgetTotal, reset, load, loadFromProject, buildUnitBudgetList, buildUnitList, companyOptions, unitList })
 </script>
 
 <style scoped>

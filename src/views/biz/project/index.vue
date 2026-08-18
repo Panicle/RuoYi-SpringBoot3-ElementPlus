@@ -329,12 +329,12 @@
 </template>
 
 <script setup name="Project">
-import { listProject, addProject, delProject, getProject, updateProject, changeStatus, archive, listProjectUnit, addProjectUnitBatch, delProjectUnit } from "@/api/biz/project"
+import { listProject, addProject, delProject, getProject, updateProject, changeStatus, archive } from "@/api/biz/project"
 import { listUserOptions } from "@/api/biz/userProfile"
 import { deptTreeSelect } from "@/api/system/user"
 import UnitBudgetEditor from "./unitBudgetEditor.vue"
 import useUserStore from "@/store/modules/user"
-import { checkPermi, checkRole } from "@/utils/permission"
+import { checkRole } from "@/utils/permission"
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -572,13 +572,7 @@ function handleUpdate(row) {
     title.value = "修改课题"
     nextTick(() => {
       unitBudgetEditorRef.value?.reset(form.value.hostUnitId)
-      listProjectUnit({ projectId }).then(res => {
-        unitBudgetEditorRef.value?.load({
-          units: res.data || [],
-          unitBudgets: response.data.unitBudgetList,
-          hostUnitId: response.data.hostUnitId
-        })
-      }).catch(() => {})
+      unitBudgetEditorRef.value?.loadFromProject(response.data)
     })
   }).catch(() => { formLoading.value = false })
 }
@@ -589,8 +583,10 @@ function submitForm() {
     if (!valid) return
     submitLoading.value = true
     const unitBudgetList = unitBudgetEditorRef.value ? unitBudgetEditorRef.value.buildUnitBudgetList() : []
+    // C3：参与/协作单位并入课题 payload 随 add/edit 保存（后端 saveUnitLinks 全量替换 project_unit，不再单独调 unit 端点）
+    const unitList = unitBudgetEditorRef.value ? unitBudgetEditorRef.value.buildUnitList() : []
     if (form.value.projectId != undefined) {
-      // 修改：剔除 projectNo / leaderId / selfHosted / hostUnitId / status（后端禁用）；预算由 unitBudgetList 驱动
+      // 修改：剔除 projectNo / leaderId / selfHosted / hostUnitId / status（后端禁用）；预算/单位关联由 unitBudgetList/unitList 驱动
       const payload = {
         projectId: form.value.projectId,
         projectName: form.value.projectName,
@@ -602,12 +598,10 @@ function submitForm() {
         endDate: form.value.endDate,
         deptId: form.value.deptId,
         remark: form.value.remark,
-        unitBudgetList
+        unitBudgetList,
+        unitList
       }
       updateProject(payload)
-        .then(() => reconcileUnits(form.value.projectId).catch(err => {
-          proxy.$modal.msgWarning("课题已保存，但关联单位处理失败：" + ((err && (err.msg || err.message)) || "请到详情页补充"))
-        }))
         .then(() => {
           proxy.$modal.msgSuccess("修改成功")
           open.value = false
@@ -630,15 +624,10 @@ function submitForm() {
         endDate: form.value.endDate,
         deptId: form.value.deptId,
         remark: form.value.remark,
-        unitBudgetList
+        unitBudgetList,
+        unitList
       }
       addProject(payload)
-        .then(res => {
-          const pid = res.data && res.data.projectId
-          return reconcileUnits(pid).catch(err => {
-            proxy.$modal.msgWarning("课题已保存，但关联单位处理失败：" + ((err && (err.msg || err.message)) || "请到详情页补充"))
-          })
-        })
         .then(() => {
           proxy.$modal.msgSuccess("新增成功")
           open.value = false
@@ -648,26 +637,6 @@ function submitForm() {
         .finally(() => { submitLoading.value = false })
     }
   })
-}
-
-/** 参与/协作单位关联与后端 project_unit 差异同步（需 biz:project:unit 权限，无权限则仅预算落库） */
-function reconcileUnits(projectId) {
-  if (!projectId) return Promise.resolve()
-  if (!checkPermi(["biz:project:unit"])) return Promise.resolve()
-  const inst = unitBudgetEditorRef.value
-  const changes = inst ? inst.getAssociationChanges() : { toAdd: [], toRemoveIds: [] }
-  const tasks = []
-  ;(changes.toAdd || []).forEach(item => {
-    tasks.push(addProjectUnitBatch({
-      projectId,
-      unitIds: [item.unitId],
-      cooperationType: item.cooperationType
-    }))
-  })
-  if (changes.toRemoveIds && changes.toRemoveIds.length) {
-    tasks.push(delProjectUnit(changes.toRemoveIds.join(",")))
-  }
-  return Promise.all(tasks)
 }
 
 /** 删除 */

@@ -163,7 +163,7 @@
                 @click="openAddUnit"
                 v-hasPermi="['biz:project:unit']"
                 :disabled="form.status === 'ARCHIVED'"
-              >添加单位</el-button>
+              >添加协作单位</el-button>
             </el-col>
           </el-row>
 
@@ -321,24 +321,23 @@
       </template>
     </el-dialog>
 
-    <!-- 添加合作单位对话框 -->
-    <el-dialog title="添加合作单位" v-model="addUnitOpen" width="520px" append-to-body :close-on-click-modal="false">
+    <!-- 添加协作单位对话框（仅协作单位 COLLABORATE；参与单位在课题新增/修改弹窗中选择） -->
+    <el-dialog title="添加协作单位" v-model="addUnitOpen" width="520px" append-to-body :close-on-click-modal="false">
       <el-form ref="addUnitRef" :model="addUnitForm" :rules="addUnitRules" label-width="100px">
-        <el-form-item label="合作单位" prop="unitIds">
+        <el-form-item label="协作单位" prop="unitIds">
           <el-tree-select
             v-model="addUnitForm.unitIds"
             :data="unitTreeOptions"
-            placeholder="请选择合作单位"
+            placeholder="请选择协作单位"
             check-strictly
             multiple
             show-checkbox
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="合作方式" prop="cooperationType">
-          <el-select v-model="addUnitForm.cooperationType" placeholder="请选择合作方式" clearable style="width: 100%">
-            <el-option v-for="dict in cooperation_type" :key="dict.value" :label="dict.label" :value="dict.value" />
-          </el-select>
+        <el-form-item label="合作方式">
+          <el-tag type="info">协作单位（COLLABORATE）</el-tag>
+          <span class="form-tip">本弹窗仅添加协作单位；参与单位请在课题新增/修改弹窗中选择</span>
         </el-form-item>
         <el-form-item label="经费金额" prop="allocatedAmount">
           <el-input-number v-model="addUnitForm.allocatedAmount" :min="0" :precision="2" controls-position="right" style="width: 100%" />
@@ -361,7 +360,6 @@ import { listUserOptions } from "@/api/biz/userProfile"
 import { deptTreeSelect } from "@/api/system/user"
 import { BUDGET_GROUPS, buildBudgetCategoryMap } from "./budgetSplit"
 import UnitBudgetEditor from "./unitBudgetEditor.vue"
-import { checkPermi } from "@/utils/permission"
 
 const route = useRoute()
 const router = useRouter()
@@ -463,8 +461,7 @@ function mapUnitTreeOptions(nodes) {
   }))
 }
 const addUnitRules = {
-  unitIds: [{ required: true, type: 'array', message: "请选择合作单位", trigger: "change" }],
-  cooperationType: [{ required: true, message: "请选择合作方式", trigger: "change" }]
+  unitIds: [{ required: true, type: 'array', message: "请选择协作单位", trigger: "change" }]
 }
 
 onMounted(() => {
@@ -514,13 +511,7 @@ function goEdit() {
     editOpen.value = true
     nextTick(() => {
       editUnitBudgetRef.value?.reset(editForm.value.hostUnitId)
-      listProjectUnit({ projectId: projectId.value }).then(res => {
-        editUnitBudgetRef.value?.load({
-          units: res.data || [],
-          unitBudgets: response.data.unitBudgetList,
-          hostUnitId: response.data.hostUnitId
-        })
-      }).catch(() => {})
+      editUnitBudgetRef.value?.loadFromProject(response.data)
     })
   }).catch(() => { editLoading.value = false })
 }
@@ -530,6 +521,8 @@ function submitEditForm() {
     if (!valid) return
     editSubmitting.value = true
     const unitBudgetList = editUnitBudgetRef.value ? editUnitBudgetRef.value.buildUnitBudgetList() : []
+    // C3：参与/协作单位并入课题 payload 随 edit 保存（后端 saveUnitLinks 全量替换 project_unit，不再单独调 unit 端点）
+    const unitList = editUnitBudgetRef.value ? editUnitBudgetRef.value.buildUnitList() : []
     const payload = {
       projectId: editForm.value.projectId,
       projectName: editForm.value.projectName,
@@ -540,10 +533,10 @@ function submitEditForm() {
       endDate: editForm.value.endDate,
       deptId: editForm.value.deptId,
       remark: editForm.value.remark,
-      unitBudgetList
+      unitBudgetList,
+      unitList
     }
     updateProject(payload)
-      .then(() => reconcileEditUnits(editForm.value.projectId))
       .then(() => {
         proxy.$modal.msgSuccess("修改成功")
         editOpen.value = false
@@ -551,26 +544,6 @@ function submitEditForm() {
       })
       .finally(() => { editSubmitting.value = false })
   })
-}
-
-/** 参与/协作单位关联与后端 project_unit 差异同步（需 biz:project:unit 权限） */
-function reconcileEditUnits(projectId) {
-  if (!projectId) return Promise.resolve()
-  if (!checkPermi(["biz:project:unit"])) return Promise.resolve()
-  const inst = editUnitBudgetRef.value
-  const changes = inst ? inst.getAssociationChanges() : { toAdd: [], toRemoveIds: [] }
-  const tasks = []
-  ;(changes.toAdd || []).forEach(item => {
-    tasks.push(addProjectUnitBatch({
-      projectId,
-      unitIds: [item.unitId],
-      cooperationType: item.cooperationType
-    }))
-  })
-  if (changes.toRemoveIds && changes.toRemoveIds.length) {
-    tasks.push(delProjectUnit(changes.toRemoveIds.join(",")))
-  }
-  return Promise.all(tasks)
 }
 
 function openAddMember() {
@@ -702,7 +675,7 @@ function loadUnits() {
 }
 
 function openAddUnit() {
-  addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: undefined, allocatedAmount: undefined }
+  addUnitForm.value = { projectId: projectId.value, unitIds: [], cooperationType: "COLLABORATE", allocatedAmount: undefined }
   treeUnit().then(response => {
     unitTreeOptions.value = mapUnitTreeOptions(response.data || [])
   })
@@ -715,7 +688,7 @@ function submitAddUnit() {
     addProjectUnitBatch({
       projectId: projectId.value,
       unitIds: addUnitForm.value.unitIds,
-      cooperationType: addUnitForm.value.cooperationType,
+      cooperationType: "COLLABORATE",
       allocatedAmount: addUnitForm.value.allocatedAmount
     }).then(res => {
       proxy.$modal.msgSuccess(res.msg || "添加成功")
