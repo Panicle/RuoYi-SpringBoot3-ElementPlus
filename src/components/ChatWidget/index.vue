@@ -23,7 +23,17 @@
             :key="idx"
             :class="['chat-msg', msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-assistant']"
           >
-            <div class="chat-msg-body">{{ msg.content }}</div>
+            <div class="chat-msg-body">
+              <template v-for="(part, pi) in splitParts(msg.content)" :key="pi">
+                <a
+                  v-if="part.link"
+                  class="chat-doc-link"
+                  :href="baseApi + part.text"
+                  target="_blank"
+                >{{ fileNameOf(part.text) }}</a>
+                <span v-else>{{ part.text }}</span>
+              </template>
+            </div>
           </div>
           <confirm-card
             v-if="currentConfirmCard"
@@ -64,6 +74,29 @@ const configured = ref(true)
 const currentConfirmCard = ref(null)
 const msgListRef = ref()
 let wsRef = null
+
+/** 文档下载链接前缀（后端 /profile 静态映射走 dev 代理 / 生产 nginx） */
+const baseApi = import.meta.env.VITE_APP_BASE_API
+
+/** 把消息文本按文档下载路径切分成 [文本|链接] 片段（不用 v-html，避免 XSS） */
+const DOC_LINK_RE = /(\/profile\/download\/chat\/[\w.-]+)/g
+function splitParts(content) {
+  const text = content || ""
+  const parts = []
+  let last = 0
+  for (const m of text.matchAll(DOC_LINK_RE)) {
+    if (m.index > last) parts.push({ link: false, text: text.slice(last, m.index) })
+    parts.push({ link: true, text: m[0] })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push({ link: false, text: text.slice(last) })
+  return parts.length ? parts : [{ link: false, text }]
+}
+
+/** 下载路径 → 展示文件名（最后一段） */
+function fileNameOf(path) {
+  return "📄 " + path.split("/").pop()
+}
 
 /** 打开面板：加载会话历史 + 刷新未读计数 + 建立预警推送连接 */
 function handleOpen() {
@@ -230,6 +263,7 @@ onUnmounted(() => {
 }
 .chat-msg-user .chat-msg-body { background: #409eff; color: #fff; }
 .chat-msg-assistant .chat-msg-body { background: #f4f4f5; color: #303133; }
+.chat-doc-link { color: #409eff; text-decoration: underline; word-break: break-all; }
 .chat-footer {
   padding: 12px;
   border-top: 1px solid #ebeef5;

@@ -238,6 +238,22 @@
             </template>
           </el-input>
         </el-form-item>
+        <el-form-item label="主持单位" prop="selfHosted">
+          <el-radio-group v-model="form.selfHosted" :disabled="!!form.projectId">
+            <el-radio value="1">本单位主持</el-radio>
+            <el-radio value="0">外单位主持</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.selfHosted === '0'" label="主持单位名称" prop="hostUnitId">
+          <el-select v-model="form.hostUnitId" placeholder="请选择主持单位" filterable clearable style="width: 100%">
+            <el-option v-for="u in unitOptions" :key="u.unitId" :label="u.unitName" :value="u.unitId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="研究领域" prop="fieldList">
+          <el-select v-model="form.fieldList" multiple filterable placeholder="请选择研究领域（可多选）" clearable style="width: 100%">
+            <el-option v-for="d in research_direction" :key="d.value" :label="d.label" :value="d.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="预算总额">
           <span class="budget-total-value">{{ formatBudget(budgetSplitTotal) }}</span>
         </el-form-item>
@@ -322,13 +338,14 @@
 
 <script setup name="Project">
 import { listProject, addProject, delProject, getProject, updateProject, changeStatus, archive } from "@/api/biz/project"
+import { listUnit } from "@/api/biz/unit"
 import { deptTreeSelect } from "@/api/system/user"
 import UserPickerDialog from "./userPickerDialog.vue"
 import { BUDGET_GROUPS, BUDGET_CATEGORIES, buildBudgetCategoryMap } from "./budgetSplit"
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
-const { project_type, project_status, project_category, specialty, budget_category } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "budget_category")
+const { project_type, project_status, project_category, specialty, budget_category, research_direction } = proxy.useDict("project_type", "project_status", "project_category", "specialty", "budget_category", "research_direction")
 
 // 预算细分：科目名走字典渲染，金额按科目映射（新增/修改用）
 const budgetCategoryMap = computed(() => buildBudgetCategoryMap(budget_category.value))
@@ -373,6 +390,7 @@ const total = ref(0)
 const title = ref("")
 const deptOptions = ref([])
 const enabledDeptOptions = ref([])
+const unitOptions = ref([])
 const dateRange = ref([])
 const currentRow = ref(null)
 const targetStatus = ref(undefined)
@@ -423,6 +441,13 @@ function getDeptTree() {
   })
 }
 
+/** 查询合作单位下拉（外单位主持选择） */
+function loadUnitOptions() {
+  listUnit({ pageNum: 1, pageSize: 1000 }).then(response => {
+    unitOptions.value = response.rows || []
+  })
+}
+
 function filterDisabledDept(tree) {
   return tree.filter(node => node.status === "0" || node.status === 0 || node.status == null).map(node => {
     if (node.children) node.children = filterDisabledDept(node.children)
@@ -457,6 +482,9 @@ function reset() {
     specialty: undefined,
     leaderId: undefined,
     leaderName: undefined,
+    selfHosted: '1',
+    hostUnitId: undefined,
+    fieldList: [],
     startDate: undefined,
     endDate: undefined,
     deptId: undefined,
@@ -525,6 +553,7 @@ function submitForm() {
         projectType: form.value.projectType,
         projectCategory: form.value.projectCategory,
         specialty: form.value.specialty,
+        fieldList: form.value.fieldList || [],
         startDate: form.value.startDate,
         endDate: form.value.endDate,
         deptId: form.value.deptId,
@@ -544,6 +573,9 @@ function submitForm() {
         projectCategory: form.value.projectCategory,
         specialty: form.value.specialty,
         leaderId: form.value.leaderId,
+        selfHosted: form.value.selfHosted,
+        hostUnitId: form.value.selfHosted === '0' ? form.value.hostUnitId : undefined,
+        fieldList: form.value.fieldList || [],
         startDate: form.value.startDate,
         endDate: form.value.endDate,
         deptId: form.value.deptId,
@@ -632,6 +664,7 @@ function formatBudget(val) {
 }
 
 getDeptTree()
+loadUnitOptions()
 getList()
 </script>
 

@@ -79,7 +79,8 @@
                 <template v-if="cell.date">
                   <div class="day-head">
                     <span class="day-num">{{ cell.dayNum }}</span>
-                    <span v-if="cell.dayTotalAcrossProjects > cell.rdHours" class="other-tip">
+                    <span v-if="cell.isRest" class="rest-tip">休</span>
+                    <span v-else-if="cell.dayTotalAcrossProjects > cell.rdHours" class="other-tip">
                       他课题 {{ formatHours(cell.dayTotalAcrossProjects - cell.rdHours) }} h
                     </span>
                   </div>
@@ -89,6 +90,7 @@
                     :max="24"
                     :step="0.5"
                     :precision="1"
+                    :disabled="cell.isRest"
                     size="small"
                     controls-position="right"
                     style="width: 100%"
@@ -209,18 +211,19 @@ function loadCalendar() {
     month: query.month
   }).then(response => {
     const data = response.data || {}
-    buildCalendar(data.days || [], data.monthTotal || 0)
+    buildCalendar(data.days || [], data.monthTotal || 0, data.restDays || [])
     loading.value = false
   }).catch(() => { loading.value = false })
 }
 
-/** 按月份构造 7 列日历网格（周一为首列）；日数据填入对应格 */
-function buildCalendar(days, total) {
+/** 按月份构造 7 列日历网格（周一为首列）；日数据填入对应格；restDays 为后端休息日（周末+法定节假日，剔除调休上班日） */
+function buildCalendar(days, total, restDays) {
   const [y, m] = query.month.split("-").map(Number)
   const firstDay = new Date(y, m - 1, 1)
   const lastDay = new Date(y, m, 0).getDate()
   // JS getDay: 0=Sun..6=Sat；映射到周一为首：Mon=0..Sun=6
   const firstWeekday = (firstDay.getDay() + 6) % 7
+  const restSet = new Set(restDays || [])
   const dayMap = {}
   const originalMap = {}
   let sum = 0
@@ -241,6 +244,7 @@ function buildCalendar(days, total) {
     row.push({
       date: dateStr,
       dayNum: day,
+      isRest: restSet.has(dateStr),
       rdHours: dayMap[dateStr] ? dayMap[dateStr].rdHours : 0,
       dayTotalAcrossProjects: dayMap[dateStr] ? dayMap[dateStr].dayTotalAcrossProjects : 0
     })
@@ -271,8 +275,8 @@ const monthTotalComputed = computed(() => {
 
 function cellClass(cell) {
   if (!cell.date) return "cal-cell empty"
-  const d = new Date(cell.date).getDay()
-  return d === 0 || d === 6 ? "cal-cell weekend" : "cal-cell"
+  // 以后端 restDays 为准（含法定节假日；调休上班的周六/日按工作日显示）
+  return cell.isRest ? "cal-cell weekend" : "cal-cell"
 }
 
 function formatHours(val) {
@@ -286,11 +290,12 @@ function handleSave() {
     proxy.$modal.msgError("请先选择课题 / 人员 / 月份")
     return
   }
-  // 白名单 payload：所有有值的格 + 被清零的原有天（rdHours:0 且服务端原值>0）
+  // 白名单 payload：所有有值的格 + 被清零的原有天（rdHours:0 且服务端原值>0）；
+  // 休息日（周末/法定节假日）跳过不下发 — 存量不动，后端校验兜底
   const days = []
   calendarWeeks.value.forEach(week => {
     week.forEach(cell => {
-      if (!cell.date) return
+      if (!cell.date || cell.isRest) return
       const rd = Number(cell.rdHours) || 0
       const original = originalDays.value[cell.date]
       if (rd > 0) {
@@ -375,5 +380,6 @@ onMounted(() => {
 .day-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .day-num { font-size: 13px; color: #606266; }
 .other-tip { font-size: 11px; color: #909399; }
+.rest-tip { font-size: 11px; color: #f56c6c; }
 .alert-collapse { background: #fff; border: 1px solid #ebeef5; border-radius: 4px; margin-top: 12px; }
 </style>
