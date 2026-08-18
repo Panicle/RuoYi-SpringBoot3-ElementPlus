@@ -40,17 +40,17 @@
         </el-card>
       </el-col>
 
-      <!-- 未读预警 -->
+      <!-- 预警信息 -->
       <el-col :xs="24" :md="8">
         <el-card shadow="never" class="panel-card">
           <template #header>
             <div class="panel-header">
-              <span class="panel-title">未读预警</span>
-              <el-link type="primary" :underline="false" @click="$router.push('/biz/alert/notify')">全部</el-link>
+              <span class="panel-title">预警信息</span>
+              <el-link type="primary" :underline="false" @click="$router.push('/biz/notify')">全部</el-link>
             </div>
           </template>
-          <el-empty v-if="alerts.length === 0" description="暂无未读预警" :image-size="60" />
-          <div v-for="a in alerts" :key="a.notifyId" class="alert-item" @click="$router.push('/biz/alert/notify')">
+          <el-empty v-if="alerts.length === 0" description="暂无预警信息" :image-size="60" />
+          <div v-for="a in alerts" :key="a.notifyId" class="alert-item" @click="$router.push('/biz/notify')">
             <el-tag :type="levelTagType(a.alertLevel)" size="small" class="alert-tag">{{ a.alertLevel || '预警' }}</el-tag>
             <span class="alert-title">{{ a.title }}</span>
           </div>
@@ -151,7 +151,7 @@ const statCards = computed(() => {
     { label: '在研课题', value: num(s.projectActive) + ' / ' + num(s.projectTotal), color: '#409eff', path: '/biz/project' },
     { label: '预算余额（万元）', value: wan(s.budgetBalance), color: '#67c23a', path: '/biz/expense' },
     { label: '在履约合同', value: num(s.contractActive) + ' / ' + num(s.contractTotal), color: '#e6a23c', path: '/biz/contract' },
-    { label: '未读预警', value: num(s.alertUnread), color: '#f56c6c', path: '/biz/alert/notify' },
+    { label: '未读预警', value: num(s.alertUnread), color: '#f56c6c', path: '/biz/notify' },
     { label: '荣誉总数', value: num(s.honorTotal), color: '#9254de', path: '/biz/honor' }
   ]
   if (isResearcherOnly.value) {
