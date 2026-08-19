@@ -31,9 +31,6 @@
         <template #header>
           <div class="clearfix">
             <span class="card-title">预算概览</span>
-            <div style="float: right">
-              <el-button type="primary" icon="Edit" @click="handleAdjustBudget" v-hasPermi="['biz:expense:budget']">调整预算</el-button>
-            </div>
           </div>
         </template>
 
@@ -52,7 +49,7 @@
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
-              <div class="stat-label">预算余额</div>
+              <div class="stat-label">可用支出余额</div>
               <div class="stat-value">{{ formatAmount(summaryBalanceTotal) }}</div>
             </div>
           </el-col>
@@ -81,7 +78,9 @@
           </el-table-column>
           <el-table-column label="进度" align="center" min-width="160">
             <template #default="scope">
+              <span v-if="scope.row.category === 'LABOR'">-</span>
               <el-progress
+                v-else
                 :percentage="progressPercent(scope.row)"
                 :color="progressColor(scope.row)"
                 :stroke-width="12"
@@ -174,6 +173,7 @@
           <el-table-column label="操作" align="center" width="160" class-name="small-padding fixed-width">
             <template #default="scope">
               <template v-if="scope.row.status === 'NORMAL'">
+                <el-button v-if="Number(scope.row.amount) > 0" link type="primary" icon="Edit" @click="handleEdit(scope.row)" v-hasPermi="['biz:expense:add']">编辑</el-button>
                 <el-button link type="primary" icon="RefreshLeft" @click="handleRefund(scope.row)" v-hasPermi="['biz:expense:add']">冲销</el-button>
                 <el-button link type="danger" icon="Close" @click="handleVoid(scope.row)" v-hasPermi="['biz:expense:void']">作废</el-button>
               </template>
@@ -221,8 +221,6 @@
       </el-collapse>
     </template>
 
-    <!-- 预算调整弹窗 -->
-    <budget-dialog ref="budgetDialogRef" @success="onBudgetChanged" />
     <!-- 记账 / 冲销弹窗 -->
     <expense-dialog ref="expenseDialogRef" @success="onExpenseChanged" />
   </div>
@@ -232,7 +230,6 @@
 import { listProject } from "@/api/biz/project"
 import { listBudget, getBudgetSummary, listExpense, voidExpense, listExpenseAlert, handleExpenseAlert } from "@/api/biz/expense"
 import { BUDGET_CATEGORIES } from "@/views/biz/project/budgetSplit"
-import BudgetDialog from "./budgetDialog.vue"
 import ExpenseDialog from "./expenseDialog.vue"
 
 const { proxy } = getCurrentInstance()
@@ -243,7 +240,6 @@ const baseUrl = import.meta.env.VITE_APP_BASE_API
 const projectOptions = ref([])
 const selectedProjectId = ref(undefined)
 
-const budgetDialogRef = ref()
 const expenseDialogRef = ref()
 
 // ===== 预算概览 =====
@@ -266,25 +262,31 @@ const budgetRows = computed(() => {
     } else {
       warnLevel = calcWarnLevel(row)
     }
+    if (category === 'LABOR') warnLevel = null
     return { ...row, category, warnLevel }
   })
 })
 
 const summaryBudgetTotal = computed(() => {
-  if (budgetSummary.value.budgetTotal != null) return budgetSummary.value.budgetTotal
-  return budgetRows.value.reduce((sum, r) => sum + (Number(r.budgetAmount) || 0), 0)
+  // 本单位预算总额：排除人工费(LABOR)
+  return budgetRows.value
+    .filter(r => r.category !== 'LABOR')
+    .reduce((sum, r) => sum + (Number(r.budgetAmount) || 0), 0)
 })
 const summaryUsedTotal = computed(() => {
-  if (budgetSummary.value.usedTotal != null) return budgetSummary.value.usedTotal
-  return budgetRows.value.reduce((sum, r) => sum + (Number(r.usedAmount) || 0), 0)
+  // 已用金额：排除人工费(LABOR)
+  return budgetRows.value
+    .filter(r => r.category !== 'LABOR')
+    .reduce((sum, r) => sum + (Number(r.usedAmount) || 0), 0)
 })
 const summaryBalanceTotal = computed(() => {
-  if (budgetSummary.value.balanceTotal != null) return budgetSummary.value.balanceTotal
-  return budgetRows.value.reduce((sum, r) => sum + (Number(r.balance) || 0), 0)
+  // 可用支出余额：排除人工费(LABOR)后的记账剩余余额
+  return budgetRows.value
+    .filter(r => r.category !== 'LABOR')
+    .reduce((sum, r) => sum + (Number(r.balance) || 0), 0)
 })
 const summaryAlertCount = computed(() => {
-  if (budgetSummary.value.alertCount != null) return budgetSummary.value.alertCount
-  return budgetRows.value.filter(r => r.warnLevel).length
+  return budgetRows.value.filter(r => r.category !== 'LABOR' && r.warnLevel).length
 })
 
 /** 双阈值预警兜底计算（后端 summary 未返回 alertFlag/alertLevel 时使用）。
@@ -337,17 +339,6 @@ function loadSummary() {
   })
 }
 
-function handleAdjustBudget() {
-  const p = projectOptions.value.find(o => o.projectId === selectedProjectId.value) || { projectId: selectedProjectId.value }
-  budgetDialogRef.value.show(p)
-}
-
-function onBudgetChanged() {
-  loadBudget()
-  loadSummary()
-  loadAlerts()
-}
-
 // ===== 经费流水 =====
 const expenseLoading = ref(false)
 const expenseList = ref([])
@@ -384,6 +375,10 @@ function resetQuery() {
 
 function handleAddExpense() {
   expenseDialogRef.value.show(selectedProjectId.value)
+}
+
+function handleEdit(row) {
+  expenseDialogRef.value.showEdit(row)
 }
 
 function handleRefund(row) {

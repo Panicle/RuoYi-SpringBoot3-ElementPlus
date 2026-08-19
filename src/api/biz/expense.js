@@ -57,6 +57,16 @@ export function addExpense(data) {
   })
 }
 
+// 编辑记账（body: expenseId/version/category/amount/expenseDate/taxRate/voucherUrl/description；
+// 金额或科目变更后端按“作废原单+新增新单”处理）
+export function updateExpense(data) {
+  return request({
+    url: '/biz/expense',
+    method: 'put',
+    data: data
+  })
+}
+
 // 作废（status→VOID，事务内回冲 used_amount/balance，带 version）
 export function voidExpense(expenseId, data) {
   return request({
